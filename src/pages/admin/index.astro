@@ -46,27 +46,34 @@ const exceptionCount = orders.filter(
         <p class="meta">
           货源余额：{balance === null ? "未知" : `¥${balance}`}
           {shopName ? ` · ${shopName}` : ""}
-            {dryRun ? " · DRY_RUN 开启（不会真实扣带土余额）" : ""}
-            {" · 支付通道：" +
-              enabledProviders.map((p) => p.label).join("、") +
-              (providers.some((p) => !p.enabled) ? "（含未启用占位）" : "")}
-          </p>
-        </div>
-      <button id="logout-btn" class="btn btn-ghost" type="button" data-testid="admin-logout">
-        退出
-      </button>
+          {dryRun ? " · DRY_RUN 开启（不会真实扣带土余额）" : ""}
+          {" · 支付通道：" +
+            enabledProviders.map((p) => p.label).join("、") +
+            (providers.some((p) => !p.enabled) ? "（含未启用占位）" : "")}
+        </p>
+      </div>
+      <div class="head-actions">
+        <button id="sync-16688-btn" class="btn btn-primary btn-sm" type="button" data-testid="admin-sync-16688">
+          批量同步到 16688
+        </button>
+        <button id="logout-btn" class="btn btn-ghost btn-sm" type="button" data-testid="admin-logout">
+          退出
+        </button>
+      </div>
     </div>
 
     <p id="admin-msg" class="msg" hidden data-testid="admin-msg"></p>
 
-    <h2>商品</h2>
+    <h2>商品（至尊拿货价 × 1.15 与 16688 映射）</h2>
     <div class="table-wrap">
       <table data-testid="admin-products">
         <thead>
           <tr>
             <th>名称</th>
+            <th>拿货价</th>
             <th>售价</th>
-            <th>code</th>
+            <th>16688 商品编号</th>
+            <th>16688 直达付款链接</th>
             <th>上架</th>
             <th>操作</th>
           </tr>
@@ -83,9 +90,9 @@ const exceptionCount = orders.filter(
             <th>订单号</th>
             <th>套餐</th>
             <th>邮箱</th>
-            <th>USDT</th>
+            <th>渠道 / 金额</th>
             <th>支付</th>
-            <th>Tx</th>
+            <th>凭据 / Tx</th>
             <th>履约</th>
             <th>操作</th>
           </tr>
@@ -102,6 +109,15 @@ const exceptionCount = orders.filter(
   const msg = document.getElementById("admin-msg");
   const productsBody = document.getElementById("products-body");
   const ordersBody = document.getElementById("orders-body");
+  const syncBtn = document.getElementById("sync-16688-btn");
+
+  function esc(s) {
+    return String(s ?? "")
+      .replaceAll("&", "&amp;")
+      .replaceAll("<", "&lt;")
+      .replaceAll(">", "&gt;")
+      .replaceAll('"', "&quot;");
+  }
 
   function showMsg(text) {
     if (!msg) return;
@@ -115,11 +131,20 @@ const exceptionCount = orders.filter(
       .map(
         (p) => `
       <tr data-id="${p.id}">
-        <td>${p.name}</td>
         <td>
-          <input type="number" class="price-input" value="${p.price_cny}" data-id="${p.id}" />
+          <strong>${esc(p.name)}</strong>
+          <div class="sub-code"><code>${esc(p.daitu_code)}</code></div>
         </td>
-        <td><code>${p.daitu_code}</code></td>
+        <td class="tabular">¥${p.cost_cny || 0}</td>
+        <td>
+          <input type="number" class="cell-input price-input" value="${p.price_cny}" data-id="${p.id}" />
+        </td>
+        <td>
+          <input type="text" class="cell-input goods-no-input" placeholder="G10001" value="${esc(p.shop16688_goods_no || "")}" data-id="${p.id}" />
+        </td>
+        <td>
+          <input type="url" class="cell-input url-input" placeholder="https://www.16688.com.cn/..." value="${esc(p.shop16688_url || "")}" data-id="${p.id}" />
+        </td>
         <td>${p.visible ? "是" : "否"}</td>
         <td>
           <button type="button" class="toggle-btn" data-id="${p.id}" data-visible="${p.visible}">
@@ -141,19 +166,24 @@ const exceptionCount = orders.filter(
           o.payment_status === "expired";
         const retry =
           o.payment_status === "paid" || o.payment_status === "manual_review"
-            ? `<button type="button" class="retry-btn" data-order="${o.order_no}" data-testid="retry-${o.order_no}">重试履约</button>`
+            ? `<button type="button" class="retry-btn" data-order="${esc(o.order_no)}" data-testid="retry-${esc(o.order_no)}">重试履约</button>`
             : "";
+        const payAmt =
+          o.payment_channel === "alipay_16688"
+            ? `支付宝 ¥${o.amount_cny}`
+            : `${o.amount_usdt} USDT`;
+        const ref = o.shop16688_trade_no || o.payment_tx_id || "-";
         return `
-      <tr data-order="${o.order_no}" class="${bad ? "row-bad" : ""}">
-        <td><code>${o.order_no}</code></td>
-        <td>${o.product_name}</td>
-        <td>${o.email}</td>
-        <td>${o.amount_usdt}</td>
-        <td data-testid="pay-${o.order_no}">${o.payment_status}</td>
-        <td><code class="tx">${o.payment_tx_id || "-"}</code></td>
-        <td data-testid="fulfill-${o.order_no}">${o.fulfill_status}${o.fulfill_error ? ` / ${o.fulfill_error}` : ""}</td>
+      <tr data-order="${esc(o.order_no)}" class="${bad ? "row-bad" : ""}">
+        <td><code>${esc(o.order_no)}</code></td>
+        <td>${esc(o.product_name)}</td>
+        <td>${esc(o.email)}</td>
+        <td class="tabular">${esc(payAmt)}</td>
+        <td data-testid="pay-${esc(o.order_no)}">${esc(o.payment_status)}</td>
+        <td><code class="tx">${esc(ref)}</code></td>
+        <td data-testid="fulfill-${esc(o.order_no)}">${esc(o.fulfill_status)}${o.fulfill_error ? ` / ${esc(o.fulfill_error)}` : ""}</td>
         <td class="ops">
-          <button type="button" class="confirm-btn" data-order="${o.order_no}">确认到账并履约</button>
+          <button type="button" class="confirm-btn" data-order="${esc(o.order_no)}">确认到账并履约</button>
           ${retry}
         </td>
       </tr>`;
@@ -164,8 +194,37 @@ const exceptionCount = orders.filter(
   renderProducts();
   renderOrders();
 
+  syncBtn?.addEventListener("click", async () => {
+    syncBtn.setAttribute("disabled", "true");
+    syncBtn.textContent = "同步中…";
+    showMsg("正在调用 16688 OpenAPI 批量上传/更新在售商品…");
+    try {
+      const res = await fetch("/api/admin/sync-16688", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: "{}",
+      });
+      const data = await res.json();
+      if (!res.ok || !data.ok) {
+        showMsg(`16688 同步提示：${data.message || data.error || "请求失败"}`);
+      } else {
+        showMsg(data.message || "同步完成");
+        setTimeout(() => location.reload(), 1200);
+      }
+    } catch {
+      showMsg("网络异常，16688 同步请求失败");
+    } finally {
+      syncBtn.removeAttribute("disabled");
+      syncBtn.textContent = "批量同步到 16688";
+    }
+  });
+
   document.getElementById("logout-btn")?.addEventListener("click", async () => {
-    await fetch("/api/admin/logout", { method: "POST" });
+    await fetch("/api/admin/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: "{}",
+    });
     location.href = "/admin/login";
   });
 
@@ -189,20 +248,30 @@ const exceptionCount = orders.filter(
 
   productsBody?.addEventListener("change", async (e) => {
     const t = e.target;
-    if (!(t instanceof HTMLInputElement) || !t.classList.contains("price-input")) return;
+    if (!(t instanceof HTMLInputElement)) return;
     const id = Number(t.dataset.id);
-    const price_cny = Number(t.value);
+    if (!id) return;
+    let payload = null;
+    if (t.classList.contains("price-input")) {
+      payload = { id, price_cny: Number(t.value) };
+    } else if (t.classList.contains("goods-no-input")) {
+      payload = { id, shop16688_goods_no: t.value.trim() };
+    } else if (t.classList.contains("url-input")) {
+      payload = { id, shop16688_url: t.value.trim() };
+    }
+    if (!payload) return;
+
     const res = await fetch("/api/admin/products", {
       method: "PATCH",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ id, price_cny }),
+      body: JSON.stringify(payload),
     });
     const data = await res.json();
     if (!res.ok) {
-      showMsg(data.error || "改价失败");
+      showMsg(data.error || "保存失败");
       return;
     }
-    showMsg("价格已更新");
+    showMsg("商品配置已保存");
   });
 
   ordersBody?.addEventListener("click", async (e) => {
@@ -254,6 +323,13 @@ const exceptionCount = orders.filter(
     justify-content: space-between;
     gap: 1rem;
     align-items: flex-start;
+    flex-wrap: wrap;
+  }
+
+  .head-actions {
+    display: flex;
+    gap: 0.55rem;
+    align-items: center;
   }
 
   h1 {
@@ -276,8 +352,9 @@ const exceptionCount = orders.filter(
     margin-top: 1rem;
     padding: 0.75rem 1rem;
     border-radius: 0.75rem;
-    border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
-    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    border: 1px solid var(--magnetic-ring);
+    background: var(--magnetic-soft);
+    color: var(--foreground);
     font-size: 0.9rem;
   }
 
@@ -285,19 +362,19 @@ const exceptionCount = orders.filter(
     overflow-x: auto;
     border: 1px solid var(--border);
     border-radius: 1rem;
-    background: var(--card);
+    background: var(--surface);
   }
 
   table {
     width: 100%;
     border-collapse: collapse;
-    font-size: 0.88rem;
+    font-size: 0.86rem;
   }
 
   th,
   td {
     text-align: left;
-    padding: 0.75rem 0.9rem;
+    padding: 0.7rem 0.85rem;
     border-top: 1px solid var(--border);
     vertical-align: middle;
   }
@@ -306,36 +383,58 @@ const exceptionCount = orders.filter(
     border-top: none;
     color: var(--muted-foreground);
     font-weight: 500;
+    white-space: nowrap;
   }
 
   code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.78rem;
+    font-family: var(--font-mono);
+    font-size: 0.76rem;
+  }
+
+  .sub-code {
+    margin-top: 0.15rem;
+    color: var(--muted-foreground);
+  }
+
+  .cell-input {
+    border: 1px solid var(--border-strong);
+    border-radius: 0.45rem;
+    background: var(--background);
+    color: var(--foreground);
+    padding: 0.35rem 0.5rem;
+    font-size: 0.82rem;
   }
 
   .price-input {
-    width: 5.5rem;
-    border: 1px solid var(--border);
-    border-radius: 0.4rem;
-    background: #05070d;
-    color: #fff;
-    padding: 0.35rem 0.45rem;
+    width: 5.2rem;
+  }
+
+  .goods-no-input {
+    width: 6.5rem;
+    font-family: var(--font-mono);
+  }
+
+  .url-input {
+    width: 13rem;
   }
 
   .toggle-btn,
-  .confirm-btn {
-    border: 1px solid var(--border);
+  .confirm-btn,
+  .retry-btn {
+    border: 1px solid var(--border-strong);
     border-radius: 999px;
-    background: transparent;
-    color: #fff;
-    padding: 0.3rem 0.75rem;
+    background: var(--surface);
+    color: var(--foreground);
+    padding: 0.3rem 0.72rem;
     font-size: 0.75rem;
     cursor: pointer;
+    white-space: nowrap;
   }
 
   .confirm-btn {
-    background: linear-gradient(135deg, #2563eb, #1d4ed8);
+    background: var(--magnetic);
     border-color: transparent;
+    color: #fff;
   }
 
   .ops {
@@ -344,22 +443,12 @@ const exceptionCount = orders.filter(
     gap: 0.35rem;
   }
 
-  .retry-btn {
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: transparent;
-    color: #fff;
-    padding: 0.3rem 0.75rem;
-    font-size: 0.75rem;
-    cursor: pointer;
-  }
-
   .row-bad {
-    background: color-mix(in srgb, #ef4444 12%, transparent);
+    background: #fef2f2;
   }
 
   .tx {
-    max-width: 7rem;
+    max-width: 7.5rem;
     display: inline-block;
     overflow: hidden;
     text-overflow: ellipsis;

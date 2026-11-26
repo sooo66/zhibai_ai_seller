@@ -1,4 +1,4 @@
-export type PaymentChannelId = "usdt_trc20" | "fiat_stub";
+export type PaymentChannelId = "usdt_trc20" | "alipay_16688" | "fiat_stub";
 
 export type PaymentProvider = {
   id: PaymentChannelId;

@@ -9,7 +9,7 @@ export const prerender = false;
 
 const schema = z.object({
   orderNo: z.string().min(6),
-  txId: z.string().min(16),
+  txId: z.string().min(6),
 });
 
 export const POST: APIRoute = async ({ request, cookies }) => {

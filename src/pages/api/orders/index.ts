@@ -3,11 +3,13 @@ import { z } from "zod";
 import { getSessionUser } from "../../../lib/auth";
 import { getDaituSyncSnapshot, isInStock } from "../../../lib/daitu-stock";
 import { createOrder, getProductById } from "../../../lib/db";
+import { resolveShop16688PayUrl } from "../../../lib/shop16688";
 
 export const prerender = false;
 
 const schema = z.object({
   productId: z.number().int().positive(),
+  paymentChannel: z.enum(["usdt_trc20", "alipay_16688"]).optional().default("usdt_trc20"),
 });
 
 export const POST: APIRoute = async ({ request, cookies }) => {
@@ -42,13 +44,20 @@ export const POST: APIRoute = async ({ request, cookies }) => {
       product,
       email: user.email,
       userId: user.id,
+      paymentChannel: body.paymentChannel,
     });
+    const shop16688PayUrl =
+      body.paymentChannel === "alipay_16688" ? resolveShop16688PayUrl(product) : "";
+
     return new Response(
       JSON.stringify({
         orderNo: order.order_no,
+        paymentChannel: order.payment_channel,
+        amountCny: order.amount_cny,
         amountUsdt: order.amount_usdt,
         expiresAt: order.expires_at,
         email: order.email,
+        shop16688PayUrl,
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },
     );

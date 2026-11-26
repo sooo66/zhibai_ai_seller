@@ -1,4 +1,5 @@
 import type { FulfillType, Product } from "./db";
+import { resolveShop16688PayUrl } from "./shop16688";
 
 export type FamilyId =
   | "chatgpt"
@@ -107,6 +108,8 @@ export type FamilyPlan = {
   notice: PlanNotice;
   inStock: boolean;
   daituCode: string;
+  shop16688GoodsNo: string;
+  shop16688PayUrl: string;
 };
 
 export type ProductFamily = {
@@ -283,14 +286,15 @@ export function groupProductsByFamily(
   stockByCode: Record<string, number> | null,
   descriptionByCode?: Record<string, string> | null,
 ): ProductFamily[] {
+  const hasStockFeed = Boolean(stockByCode && Object.keys(stockByCode).length > 0);
   return FAMILY_DEFS.map((def) => {
     const plans = products
       .filter(def.match)
       .sort((a, b) => a.sort_order - b.sort_order)
       .map((p) => {
         const known =
-          stockByCode && Object.prototype.hasOwnProperty.call(stockByCode, p.daitu_code);
-        const inStock = !known || (stockByCode![p.daitu_code] ?? 0) > 0;
+          hasStockFeed && Object.prototype.hasOwnProperty.call(stockByCode, p.daitu_code);
+        const inStock = !hasStockFeed ? true : known && (stockByCode![p.daitu_code] ?? 0) > 0;
         const upstreamDesc = descriptionByCode?.[p.daitu_code];
         return {
           id: p.id,
@@ -307,6 +311,8 @@ export function groupProductsByFamily(
           notice: buildPlanNotice(p, upstreamDesc),
           inStock,
           daituCode: p.daitu_code,
+          shop16688GoodsNo: p.shop16688_goods_no || "",
+          shop16688PayUrl: resolveShop16688PayUrl(p),
         };
       });
     if (plans.length === 0) return null;

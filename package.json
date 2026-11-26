@@ -7,7 +7,8 @@
     "dev": "astro dev --port 3070 --host",
     "build": "astro build",
     "preview": "astro preview --port 3070",
-    "typecheck": "tsc --noEmit --project tsconfig.json"
+    "typecheck": "tsc --noEmit --project tsconfig.json",
+    "sync:16688": "node scripts/sync-16688.mjs"
   },
   "dependencies": {
     "@astrojs/node": "^9.1.3",

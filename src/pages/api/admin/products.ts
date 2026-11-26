@@ -23,7 +23,10 @@ const patchSchema = z.object({
   name: z.string().min(1).optional(),
   summary: z.string().optional(),
   description: z.string().optional(),
+  cost_cny: z.number().nonnegative().optional(),
   price_cny: z.number().positive().optional(),
+  shop16688_goods_no: z.string().optional(),
+  shop16688_url: z.string().optional(),
   visible: z.boolean().optional(),
 });
 

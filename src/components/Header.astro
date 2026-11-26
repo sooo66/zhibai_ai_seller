@@ -23,10 +23,16 @@ const sessionUser = getSessionUser(Astro.cookies);
         data-testid="header-user"
         hidden={!sessionUser}
       >
-        <span class="nav-user-dot" aria-hidden="true"></span>
-        <span class="nav-user-email" id="header-user-email">
-          {sessionUser?.email || ""}
-        </span>
+        <a
+          href="/orders"
+          class="nav-user-link"
+          title="查看该邮箱的全部历史订单"
+        >
+          <span class="nav-user-dot" aria-hidden="true"></span>
+          <span class="nav-user-email" id="header-user-email">
+            {sessionUser?.email || ""}
+          </span>
+        </a>
         <button
           type="button"
           class="nav-logout"
@@ -156,6 +162,15 @@ const sessionUser = getSessionUser(Astro.cookies);
 
   .nav-user[hidden] {
     display: none;
+  }
+
+  .nav-user-link {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.42rem;
+    color: var(--foreground) !important;
+    font-size: 0.78rem !important;
+    text-decoration: none;
   }
 
   .nav-user-dot {

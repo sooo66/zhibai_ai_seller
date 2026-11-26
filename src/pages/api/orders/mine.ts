@@ -5,6 +5,7 @@ import {
   findOrdersByVerifiedEmail,
   getProductById,
 } from "../../../lib/db";
+import { getFulfillGuide } from "../../../lib/fulfill-guide";
 
 export const prerender = false;
 
@@ -26,6 +27,7 @@ export const GET: APIRoute = async ({ cookies }) => {
       email: order.email,
       amountCny: order.amount_cny,
       amountUsdt: order.amount_usdt,
+      paymentChannel: order.payment_channel || "usdt_trc20",
       paymentStatus: order.payment_status,
       fulfillStatus: order.fulfill_status,
       fulfillType: product?.fulfill_type || "card",
@@ -34,6 +36,7 @@ export const GET: APIRoute = async ({ cookies }) => {
       createdAt: order.created_at,
       paidAt: order.paid_at,
       fulfilledAt: order.fulfilled_at,
+      guide: getFulfillGuide(product),
     };
   });
 

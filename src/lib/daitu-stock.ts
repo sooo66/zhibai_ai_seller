@@ -223,7 +223,7 @@ export async function getDaituStockByCode(): Promise<StockMap | null> {
 }
 
 export function isInStock(stockMap: StockMap | null, daituCode: string) {
-  if (!stockMap) return true; // unconfigured / unknown → allow click; fulfill API validates
-  if (!(daituCode in stockMap)) return true;
+  if (!stockMap || Object.keys(stockMap).length === 0) return true; // unconfigured / unknown → allow click; fulfill API validates
+  if (!(daituCode in stockMap)) return false; // delisted / hidden upstream → treat as sold out
   return stockMap[daituCode] > 0;
 }
