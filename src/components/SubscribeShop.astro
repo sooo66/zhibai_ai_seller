@@ -2,7 +2,9 @@
 import { getSessionUser } from "../lib/auth";
 import { listVisibleProducts } from "../lib/db";
 import { getDaituSyncSnapshot } from "../lib/daitu-stock";
+import { env } from "../lib/env";
 import { groupProductsByFamily } from "../lib/product-families";
+import { isAlipay16688Enabled } from "../lib/shop16688";
 import BrandIcon from "./BrandIcon.astro";
 
 const products = listVisibleProducts();
@@ -13,6 +15,8 @@ const families = groupProductsByFamily(
   daituSnap.descriptionByCode,
 );
 const sessionUser = getSessionUser(Astro.cookies);
+const alipayEnabled = isAlipay16688Enabled();
+const allowDevTools = env("ALLOW_PAYMENT_SIMULATE") === "1";
 const familiesJson = JSON.stringify(families);
 const firstSelectable =
   families.find((f) => f.plans.some((p) => p.inStock))?.id ?? families[0]?.id ?? "";
@@ -24,6 +28,7 @@ const firstSelectable =
   data-testid="subscribe-shop"
   data-families={familiesJson}
   data-user-email={sessionUser?.email || ""}
+  data-alipay-enabled={alipayEnabled ? "1" : "0"}
 >
   {
     families.length === 0 ? (
@@ -148,12 +153,65 @@ const firstSelectable =
             <div class="checkout-card">
               <div class="checkout-card-head">
                 <span class="sub-label">订单结算</span>
-                <span class="pay-method-tag">USDT · TRC-20</span>
+                <span class="pay-method-tag" id="pay-method-badge">
+                  {alipayEnabled ? "支付宝 / 微信" : "USDT · TRC-20"}
+                </span>
               </div>
 
               <div class="order-summary-strip">
                 <span class="summary-plan" data-testid="summary-plan-name">—</span>
                 <strong class="summary-price tabular" data-testid="summary-plan-price">—</strong>
+              </div>
+
+              <div class="pay-channel-group" role="radiogroup" aria-label="选择支付方式" data-testid="pay-channel-group">
+                {alipayEnabled ? (
+                  <button
+                    type="button"
+                    class="pay-channel-btn active"
+                    data-channel="alipay_16688"
+                    data-testid="pay-channel-alipay"
+                    aria-pressed="true"
+                  >
+                    <span class="channel-icon cny" aria-hidden="true">
+                      <svg viewBox="0 0 20 20" width="15" height="15" fill="none">
+                        <path
+                          d="M6.2 4.5 10 9.6l3.8-5.1M6 10.6h8M6 13.4h8M10 9.6v6.2"
+                          stroke="currentColor"
+                          stroke-width="1.75"
+                          stroke-linecap="round"
+                          stroke-linejoin="round"
+                        />
+                      </svg>
+                    </span>
+                    <span class="channel-text">
+                      <strong>支付宝 / 微信</strong>
+                      <small>人民币扫码</small>
+                    </span>
+                  </button>
+                ) : null}
+                <button
+                  type="button"
+                  class:list={["pay-channel-btn", { active: !alipayEnabled }]}
+                  data-channel="usdt_trc20"
+                  data-testid="pay-channel-usdt"
+                  aria-pressed={!alipayEnabled ? "true" : "false"}
+                >
+                  <span class="channel-icon usdt" aria-hidden="true">
+                    <svg viewBox="0 0 20 20" width="15" height="15" fill="none">
+                      <path
+                        d="M5 5.2h10M10 5.2v10.2M5.5 9.8c0 1.25 2.02 2.2 4.5 2.2s4.5-.95 4.5-2.2"
+                        stroke="currentColor"
+                        stroke-width="1.75"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                  <span class="channel-text">
+                    <strong>USDT</strong>
+                    <small>TRC-20 链上</small>
+                  </span>
+                </button>
               </div>
 
               <form class="checkout-form" id="checkout-form" data-testid="checkout-form">
@@ -273,6 +331,17 @@ const firstSelectable =
                     </div>
 
                     <p class="otp-status" id="otp-status" hidden data-testid="otp-status"></p>
+
+                    {allowDevTools ? (
+                      <button
+                        type="button"
+                        class="dev-login-btn"
+                        id="dev-login-btn"
+                        data-testid="dev-login-btn"
+                      >
+                        开发调试：一键免验登录（dev@magfieldai.top）
+                      </button>
+                    ) : null}
                   </div>
 
                   <p class="checkout-error" id="checkout-error" hidden data-testid="checkout-error"></p>
@@ -389,6 +458,13 @@ const firstSelectable =
     let selectedProductId =
       first.plans.find((p) => p.inStock)?.id ?? first.plans[0]?.id ?? 0;
     let signedInEmail: string | null = shop.dataset.userEmail?.trim() || null;
+    let selectedChannel: "alipay_16688" | "usdt_trc20" =
+      shop.dataset.alipayEnabled === "1" ? "alipay_16688" : "usdt_trc20";
+
+    const payMethodBadge = document.getElementById("pay-method-badge");
+    const channelBtns = Array.from(
+      bar.querySelectorAll<HTMLButtonElement>("[data-channel]"),
+    );
 
     const titleEl = bar.querySelector<HTMLElement>("[data-testid='checkout-title']");
     const typeBadgeEl = bar.querySelector<HTMLElement>("[data-testid='plan-type-badge']");
@@ -415,6 +491,7 @@ const firstSelectable =
     const captchaRefreshBtn = document.getElementById("checkout-captcha-refresh");
     const otpInput = document.getElementById("checkout-otp") as HTMLInputElement | null;
     const sendOtpBtn = document.getElementById("send-otp-btn") as HTMLButtonElement | null;
+    const devLoginBtn = document.getElementById("dev-login-btn") as HTMLButtonElement | null;
     const otpStatusEl = document.getElementById("otp-status");
 
     let captchaId = "";
@@ -469,13 +546,66 @@ const firstSelectable =
       const plan = currentPlan();
       if (!submitBtn || !plan) return;
       submitBtn.disabled = !plan.inStock;
+      const payVerb = selectedChannel === "alipay_16688" ? "支付宝 / 微信支付" : "USDT 支付";
       if (!plan.inStock) {
         submitBtn.textContent = "当前规格已售罄";
       } else if (signedInEmail) {
-        submitBtn.textContent = `继续前往支付 · ¥${plan.priceCny}`;
+        submitBtn.textContent = `前往${payVerb} · ¥${plan.priceCny}`;
       } else {
-        submitBtn.textContent = `验证邮箱并前往支付 · ¥${plan.priceCny}`;
+        submitBtn.textContent = `验证邮箱并${payVerb} · ¥${plan.priceCny}`;
       }
+      if (payMethodBadge) {
+        payMethodBadge.textContent =
+          selectedChannel === "alipay_16688" ? "支付宝 / 微信" : "USDT · TRC-20";
+      }
+    }
+
+    devLoginBtn?.addEventListener("click", async () => {
+      if (errorEl) errorEl.hidden = true;
+      devLoginBtn.disabled = true;
+      devLoginBtn.textContent = "正在登录测试账号…";
+      try {
+        const res = await fetch("/api/dev/dev-login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          if (errorEl) {
+            errorEl.textContent = data.error || "开发登录失败";
+            errorEl.hidden = false;
+          }
+          return;
+        }
+        signedInEmail = data.user?.email || "dev@magfieldai.top";
+        renderAuthState();
+        window.dispatchEvent(
+          new CustomEvent("mf:auth-changed", { detail: { email: signedInEmail } }),
+        );
+      } catch {
+        if (errorEl) {
+          errorEl.textContent = "网络异常";
+          errorEl.hidden = false;
+        }
+      } finally {
+        devLoginBtn.disabled = false;
+        devLoginBtn.textContent = "开发调试：一键免验登录（dev@magfieldai.top）";
+      }
+    });
+
+    for (const btn of channelBtns) {
+      btn.addEventListener("click", () => {
+        const ch = btn.dataset.channel;
+        if (ch !== "alipay_16688" && ch !== "usdt_trc20") return;
+        selectedChannel = ch;
+        for (const other of channelBtns) {
+          const on = other.dataset.channel === ch;
+          other.classList.toggle("active", on);
+          other.setAttribute("aria-pressed", on ? "true" : "false");
+        }
+        updateSubmitButton();
+      });
     }
 
     function renderAuthState() {
@@ -798,7 +928,10 @@ const firstSelectable =
         const res = await fetch("/api/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productId: plan.id }),
+          body: JSON.stringify({
+            productId: plan.id,
+            paymentChannel: selectedChannel,
+          }),
         });
         const data = await res.json();
         if (res.status === 401) {
@@ -1258,10 +1391,96 @@ const firstSelectable =
     justify-content: space-between;
     gap: 0.75rem;
     padding: 0.75rem 0.9rem;
-    margin-bottom: 1.1rem;
+    margin-bottom: 0.85rem;
     border-radius: 0.7rem;
     background: var(--surface);
     border: 1px solid var(--border);
+  }
+
+  .pay-channel-group {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 0.5rem;
+    margin-bottom: 1rem;
+  }
+
+  .pay-channel-btn {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    padding: 0.55rem 0.7rem;
+    border-radius: 0.7rem;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--foreground);
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.15s ease, background 0.15s ease, box-shadow 0.15s ease;
+  }
+
+  .pay-channel-btn:hover:not(.active) {
+    border-color: rgba(15, 23, 42, 0.24);
+  }
+
+  .pay-channel-btn.active {
+    border-color: var(--magnetic);
+    background: #f5f8ff;
+    box-shadow: 0 0 0 2px rgba(37, 99, 235, 0.12);
+  }
+
+  .channel-icon {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 0.5rem;
+    flex-shrink: 0;
+  }
+
+  .channel-icon.cny {
+    background: rgba(22, 119, 255, 0.1);
+    color: #1677ff;
+  }
+
+  .channel-icon.usdt {
+    background: rgba(22, 163, 74, 0.11);
+    color: #15803d;
+  }
+
+  .dev-login-btn {
+    width: 100%;
+    padding: 0.45rem 0.7rem;
+    border-radius: 0.6rem;
+    border: 1px dashed var(--border-strong);
+    background: var(--surface);
+    color: var(--muted-foreground);
+    font: inherit;
+    font-size: 0.74rem;
+    cursor: pointer;
+    transition: border-color 0.15s ease, color 0.15s ease;
+  }
+
+  .dev-login-btn:hover {
+    border-color: var(--magnetic);
+    color: var(--magnetic);
+  }
+
+  .channel-text {
+    display: flex;
+    flex-direction: column;
+    line-height: 1.2;
+  }
+
+  .channel-text strong {
+    font-size: 0.8rem;
+    font-weight: 600;
+  }
+
+  .channel-text small {
+    font-size: 0.68rem;
+    color: var(--muted-foreground);
+    margin-top: 0.12rem;
   }
 
   .summary-plan {

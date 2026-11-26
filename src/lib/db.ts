@@ -14,8 +14,11 @@ export type Product = {
   name: string;
   summary: string;
   description: string;
+  cost_cny: number;
   price_cny: number;
   daitu_code: string;
+  shop16688_goods_no: string;
+  shop16688_url: string;
   fulfill_type: FulfillType;
   channel_tag: string;
   account_warning: string;
@@ -63,6 +66,7 @@ export type Order = {
   fulfill_status: "none" | "processing" | "done" | "error";
   payment_channel: string;
   payment_tx_id: string | null;
+  shop16688_trade_no: string | null;
   expires_at: string | null;
   daitu_trade_no: string | null;
   deliver_secret: string | null;
@@ -107,6 +111,24 @@ function migrateSchema(database: Database.Database) {
   }
   if (!columnExists(database, "orders", "user_id")) {
     database.exec(`ALTER TABLE orders ADD COLUMN user_id INTEGER`);
+  }
+  if (!columnExists(database, "orders", "shop16688_trade_no")) {
+    database.exec(`ALTER TABLE orders ADD COLUMN shop16688_trade_no TEXT`);
+  }
+  if (!columnExists(database, "products", "cost_cny")) {
+    database.exec(
+      `ALTER TABLE products ADD COLUMN cost_cny REAL NOT NULL DEFAULT 0`,
+    );
+  }
+  if (!columnExists(database, "products", "shop16688_goods_no")) {
+    database.exec(
+      `ALTER TABLE products ADD COLUMN shop16688_goods_no TEXT NOT NULL DEFAULT ''`,
+    );
+  }
+  if (!columnExists(database, "products", "shop16688_url")) {
+    database.exec(
+      `ALTER TABLE products ADD COLUMN shop16688_url TEXT NOT NULL DEFAULT ''`,
+    );
   }
   if (!columnExists(database, "products", "fulfill_type")) {
     database.exec(
@@ -156,6 +178,10 @@ function migrateSchema(database: Database.Database) {
   database.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_tx_id
      ON orders(payment_tx_id) WHERE payment_tx_id IS NOT NULL`,
+  );
+  database.exec(
+    `CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_shop16688_trade_no
+     ON orders(shop16688_trade_no) WHERE shop16688_trade_no IS NOT NULL`,
   );
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_orders_email_pwd
@@ -258,7 +284,10 @@ export function updateProduct(
     name?: string;
     summary?: string;
     description?: string;
+    cost_cny?: number;
     price_cny?: number;
+    shop16688_goods_no?: string;
+    shop16688_url?: string;
     visible?: number | boolean;
   },
 ) {
@@ -272,17 +301,40 @@ export function updateProduct(
         : 0;
   getDb()
     .prepare(
-      `UPDATE products SET name = ?, summary = ?, description = ?, price_cny = ?, visible = ? WHERE id = ?`,
+      `UPDATE products
+       SET name = ?, summary = ?, description = ?, cost_cny = ?, price_cny = ?,
+           shop16688_goods_no = ?, shop16688_url = ?, visible = ?
+       WHERE id = ?`,
     )
     .run(
       patch.name ?? current.name,
       patch.summary ?? current.summary,
       patch.description ?? current.description,
+      patch.cost_cny ?? current.cost_cny ?? 0,
       patch.price_cny ?? current.price_cny,
+      patch.shop16688_goods_no ?? current.shop16688_goods_no ?? "",
+      patch.shop16688_url ?? current.shop16688_url ?? "",
       visible,
       id,
     );
   return getProductById(id);
+}
+
+export function updateProductShop16688BySlug(
+  slug: string,
+  patch: { goodsNo: string; url?: string },
+) {
+  const current = getProductBySlug(slug);
+  if (!current) return null;
+  getDb()
+    .prepare(
+      `UPDATE products
+       SET shop16688_goods_no = ?,
+           shop16688_url = CASE WHEN ? <> '' THEN ? ELSE shop16688_url END
+       WHERE slug = ?`,
+    )
+    .run(patch.goodsNo, patch.url || "", patch.url || "", slug);
+  return getProductBySlug(slug);
 }
 
 /* ---------------- Lightweight OTP User & Session Queries ---------------- */
@@ -470,10 +522,15 @@ export function createOrder(input: {
   email: string;
   userId?: number | null;
   queryPassword?: string;
+  paymentChannel?: "usdt_trc20" | "alipay_16688";
 }) {
   const database = getDb();
   const orderNo = `Z${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
-  const amountUsdt = allocateUniqueUsdtAmount(database, input.product.price_cny);
+  const channel = input.paymentChannel || "usdt_trc20";
+  const amountUsdt =
+    channel === "usdt_trc20"
+      ? allocateUniqueUsdtAmount(database, input.product.price_cny)
+      : 0;
   const ttl = getPaymentTtlMinutes();
   const queryPasswordHash = input.queryPassword
     ? hashQueryPassword(input.queryPassword)
@@ -484,7 +541,7 @@ export function createOrder(input: {
       `INSERT INTO orders (
         order_no, product_id, product_name, user_id, email, query_password_hash,
         amount_cny, amount_usdt, payment_channel, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'usdt_trc20', datetime('now', ?))`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, datetime('now', ?))`,
     )
     .run(
       orderNo,
@@ -495,6 +552,7 @@ export function createOrder(input: {
       queryPasswordHash,
       input.product.price_cny,
       amountUsdt,
+      channel,
       `+${ttl} minutes`,
     );
   return getOrderByNo(orderNo)!;
@@ -563,7 +621,8 @@ export function findPendingOrderByUsdtAmount(amountUsdt: number) {
   return getDb()
     .prepare(
       `SELECT * FROM orders
-       WHERE payment_status IN ('pending', 'confirming')
+       WHERE payment_channel = 'usdt_trc20'
+         AND payment_status IN ('pending', 'confirming')
          AND ABS(amount_usdt - ?) < 0.001
          AND (expires_at IS NULL OR expires_at > datetime('now'))
        ORDER BY id ASC LIMIT 1`,
@@ -575,6 +634,19 @@ export function findOrderByPaymentTx(txId: string) {
   return getDb()
     .prepare("SELECT * FROM orders WHERE payment_tx_id = ?")
     .get(txId) as Order | undefined;
+}
+
+export function findOrderByShop16688TradeNo(tradeNo: string) {
+  return getDb()
+    .prepare("SELECT * FROM orders WHERE shop16688_trade_no = ?")
+    .get(tradeNo) as Order | undefined;
+}
+
+export function setOrderShop16688TradeNo(orderNo: string, tradeNo: string) {
+  getDb()
+    .prepare("UPDATE orders SET shop16688_trade_no = ? WHERE order_no = ?")
+    .run(tradeNo, orderNo);
+  return getOrderByNo(orderNo);
 }
 
 export function listOrders(limit = 100) {

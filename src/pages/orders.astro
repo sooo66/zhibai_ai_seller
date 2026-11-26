@@ -6,6 +6,7 @@ import {
   findOrdersByVerifiedEmail,
   getProductById,
 } from "../lib/db";
+import { getFulfillGuide } from "../lib/fulfill-guide";
 
 export const prerender = false;
 
@@ -24,12 +25,14 @@ const initialOrders = sessionUser
         email: o.email,
         amountCny: o.amount_cny,
         amountUsdt: o.amount_usdt,
+        paymentChannel: o.payment_channel || "usdt_trc20",
         paymentStatus: o.payment_status,
         fulfillStatus: o.fulfill_status,
         fulfillType: p?.fulfill_type || "card",
         deliverSecret: o.deliver_secret,
         fulfillError: o.fulfill_error,
         createdAt: o.created_at,
+        guide: getFulfillGuide(p),
       };
     })
   : [];
@@ -203,12 +206,20 @@ const initialOrders = sessionUser
     email: string;
     amountUsdt: number;
     amountCny: number;
+    paymentChannel?: string;
     paymentStatus: string;
     fulfillStatus: string;
     fulfillType?: "card" | "account" | "manual";
     deliverSecret?: string | null;
     fulfillError?: string | null;
     createdAt?: string;
+    guide?: {
+      title: string;
+      subtitle: string;
+      actionUrl?: string;
+      actionLabel?: string;
+      steps: string[];
+    };
   };
 
   function payLabel(s: string) {
@@ -248,8 +259,12 @@ const initialOrders = sessionUser
       : isManual
         ? "本商品为人工代充，请携带订单号联系客服（support@magfieldai.top）协助完成自有账号代充。"
         : "请按发货说明，使用卡密充到你自己的账号。";
+    const guideHtml =
+      o.deliverSecret && o.guide?.steps?.length
+        ? `<details class="order-guide"><summary>查看使用 / 激活教程（${escapeHtml(o.guide.title)}）</summary><ol>${o.guide.steps.map((st) => `<li>${escapeHtml(st)}</li>`).join("")}</ol></details>`
+        : "";
     const secret = o.deliverSecret
-      ? `<div class="secret"><div class="muted">${secretLabel}</div><pre data-testid="deliver-secret">${escapeHtml(String(o.deliverSecret))}</pre><p class="muted">${secretHint}</p></div>`
+      ? `<div class="secret"><div class="muted">${secretLabel}</div><pre data-testid="deliver-secret">${escapeHtml(String(o.deliverSecret))}</pre><p class="muted">${secretHint}</p>${guideHtml}</div>`
       : "";
     const err = o.fulfillError
       ? `<p class="error">履约提示：${escapeHtml(String(o.fulfillError))}</p>`
@@ -264,7 +279,7 @@ const initialOrders = sessionUser
         <div class="info"><span>套餐</span><strong>${escapeHtml(o.productName)}</strong></div>
         <div class="info"><span>支付</span><strong data-testid="result-pay">${payLabel(o.paymentStatus)}</strong></div>
         <div class="info"><span>发货</span><strong data-testid="result-fulfill">${fulfillLabel(o.fulfillStatus)}</strong></div>
-        <div class="info"><span>应付</span><strong>${o.amountUsdt} USDT / ¥${o.amountCny}</strong></div>
+        <div class="info"><span>应付</span><strong>${o.paymentChannel === "alipay_16688" ? `¥${o.amountCny} · 支付宝 / 微信` : `${o.amountUsdt} USDT / ¥${o.amountCny}`}</strong></div>
         ${o.createdAt ? `<div class="info"><span>下单</span><strong>${escapeHtml(o.createdAt)}</strong></div>` : ""}
         ${secret}${err}${openLink}
       </article>
@@ -520,6 +535,11 @@ const initialOrders = sessionUser
 </script>
 
 <style>
+  .orders {
+    max-width: 46rem;
+    margin: 0 auto;
+  }
+
   .orders h1 {
     margin: 0;
     font-size: clamp(1.6rem, 3vw, 2.2rem);
@@ -715,6 +735,28 @@ const initialOrders = sessionUser
 
   .result-list :global(.order-actions) {
     margin-top: 0.35rem;
+  }
+
+  .result-list :global(.order-guide) {
+    margin-top: 0.65rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--magnetic-ring);
+    font-size: 0.82rem;
+  }
+
+  .result-list :global(.order-guide summary) {
+    cursor: pointer;
+    font-weight: 600;
+    color: var(--magnetic);
+  }
+
+  .result-list :global(.order-guide ol) {
+    margin: 0.55rem 0 0;
+    padding-left: 1.2rem;
+    display: grid;
+    gap: 0.35rem;
+    line-height: 1.55;
+    color: var(--foreground);
   }
 
   .legacy-box {

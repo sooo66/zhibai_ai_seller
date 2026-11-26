@@ -6,6 +6,7 @@ export type CatalogRow = {
   name: string;
   summary: string;
   description: string;
+  cost_cny: number;
   price_cny: number;
   daitu_code: string;
   fulfill_type: FulfillType;
@@ -271,14 +272,15 @@ Gemini Ultra 代充值 · 1个月 · 正规 iOS 充值渠道｜200 美元档位
 • 自有账号代充相比成品号更稳妥，但谷歌风控不可控，自有账号同样无法保证完全避免平台风控或封禁。
 • 请遵守平台使用规则，避免异常操作或违规使用（如蒸馏等）。`;
 
-/** Canonical Magfield A/C catalog — upserted on boot. */
+/** Canonical Magfield A/C catalog — upserted on boot. Prices = round(Daitu 至尊代理价 × 1.15). */
 export const CATALOG_ROWS: CatalogRow[] = [
   {
     slug: "gpt-plus-ios",
     name: "ChatGPT Plus · iOS 美区",
     summary: "iOS 渠道自助卡密，支持覆盖充值至原号（推荐 Gmail 账号）。",
     description: GPT_PLUS_IOS_DESC,
-    price_cny: 149,
+    cost_cny: 125,
+    price_cny: 144,
     daitu_code: "8C2F1E5A1F8D8118",
     fulfill_type: "card",
     channel_tag: "",
@@ -292,7 +294,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "ChatGPT Plus · 年卡（iOS）",
     summary: "12 个月 iOS 全自动充值卡密，质保订阅 12 个月。",
     description: GPT_PLUS_ANNUAL_IOS_DESC,
-    price_cny: 1680,
+    cost_cny: 1450,
+    price_cny: 1668,
     daitu_code: "GPTPLUS-ANNUAL-IOS-20261002",
     fulfill_type: "card",
     channel_tag: "",
@@ -306,7 +309,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "ChatGPT Pro 10x · iOS 美区",
     summary: "iOS 美区全自动卡密即充即到，已有 Plus/Pro 均可覆盖充值。",
     description: GPT_PRO_IOS_DESC("10X"),
-    price_cny: 759,
+    cost_cny: 655,
+    price_cny: 753,
     daitu_code: "F75FAA3508D63C46",
     fulfill_type: "card",
     channel_tag: "",
@@ -320,7 +324,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "ChatGPT Pro 20x · iOS 美区",
     summary: "iOS 美区全自动卡密即充即到，已有 Plus/Pro 均可覆盖充值。",
     description: GPT_PRO_IOS_DESC("20X"),
-    price_cny: 1490,
+    cost_cny: 1300,
+    price_cny: 1495,
     daitu_code: "D88A649A5CC464F5",
     fulfill_type: "card",
     channel_tag: "",
@@ -334,7 +339,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "ChatGPT Pro 50x · iOS 美区",
     summary: "iOS 美区全自动卡密即充即到，已有 Plus/Pro 均可覆盖充值。",
     description: GPT_PRO_IOS_DESC("50X"),
-    price_cny: 3490,
+    cost_cny: 3150,
+    price_cny: 3623,
     daitu_code: "2C3BD75F9CE2C758",
     fulfill_type: "card",
     channel_tag: "",
@@ -348,7 +354,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "ChatGPT Pro 50x · 智利区",
     summary: "不限地区自助卡密，仅限当前无任何订阅的普通账号充值。",
     description: GPT_PRO_50X_CHILE_DESC,
-    price_cny: 3490,
+    cost_cny: 3130,
+    price_cny: 3600,
     daitu_code: "GPTPRO25X-CHILE-20260930",
     fulfill_type: "card",
     channel_tag: "",
@@ -362,6 +369,7 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "ChatGPT Plus · 菲区通道",
     summary: "菲区特惠卡密自助充，卡密永久有效不退不换（禁微软邮箱/0元购号）。",
     description: GPT_PLUS_PH_DESC,
+    cost_cny: 112,
     price_cny: 129,
     daitu_code: "6D66FF49218BF45C",
     fulfill_type: "card",
@@ -376,7 +384,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "ChatGPT Pro 20x · 菲区通道",
     summary: "菲区 Pro 卡密排队自助充（需提交邮箱+Token/Cookie，卡密 7 天内使用）。",
     description: GPT_PRO_20X_PH_DESC,
-    price_cny: 1180,
+    cost_cny: 1030,
+    price_cny: 1185,
     daitu_code: "69526F78D0568841",
     fulfill_type: "card",
     channel_tag: "特惠通道",
@@ -390,7 +399,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Codex 点数额度",
     summary: "按规格发放卡密至 aiee.fun 兑换额度（GPT Free 免费账号勿下）。",
     description: CODEX_POINTS_DESC,
-    price_cny: 100,
+    cost_cny: 100,
+    price_cny: 115,
     daitu_code: "DRAFT6893152BA47870EF",
     fulfill_type: "card",
     channel_tag: "",
@@ -404,7 +414,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Grok Plus · 美区蓝V",
     summary: "美区卡付自助充至原号，仅限 Free 状态账号（不含 Grok Bot）。",
     description: GROK_PLUS_DESC,
-    price_cny: 68,
+    cost_cny: 55,
+    price_cny: 63,
     daitu_code: "0B96BC7C7F85809E",
     fulfill_type: "card",
     channel_tag: "",
@@ -418,7 +429,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Grok Premium · 美区",
     summary: "美区卡付原号自助充（含 Grok Bot/Cursor/X 权益，仅限 Free 账号）。",
     description: GROK_TIER_DESC("Premium"),
-    price_cny: 268,
+    cost_cny: 230,
+    price_cny: 265,
     daitu_code: "C01878BB9126D760",
     fulfill_type: "card",
     channel_tag: "",
@@ -432,7 +444,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Grok Super · 美区",
     summary: "美区卡付原号自助充（含 Grok Bot/Cursor/X 权益，仅限 Free 账号）。",
     description: GROK_TIER_DESC("Super"),
-    price_cny: 838,
+    cost_cny: 745,
+    price_cny: 857,
     daitu_code: "9BFFB902156EC0F1",
     fulfill_type: "card",
     channel_tag: "",
@@ -446,7 +459,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Grok Ultra · 美区",
     summary: "美区卡付原号自助充（含 Grok Bot/Cursor/X 权益，仅限 Free 账号）。",
     description: GROK_TIER_DESC("Ultra"),
-    price_cny: 1680,
+    cost_cny: 1490,
+    price_cny: 1714,
     daitu_code: "96A0C324544B897E",
     fulfill_type: "card",
     channel_tag: "",
@@ -460,7 +474,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Claude Pro · 免K成品号",
     summary: "美区实体卡一卡一付免K独享成品号，24小时内交付（急单勿拍）。",
     description: CLAUDE_PRO_ACCOUNT_DESC,
-    price_cny: 288,
+    cost_cny: 240,
+    price_cny: 276,
     daitu_code: "21B2AC8107463979",
     fulfill_type: "account",
     channel_tag: "",
@@ -474,7 +489,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Gemini Ultra 5X · 成品号",
     summary: "iOS 正规渠道 99.99 美元档成品号（交付账号/密码/辅邮/2FA）。",
     description: GEMINI_ULTRA_ACCOUNT_DESC("99.99 美元档位"),
-    price_cny: 548,
+    cost_cny: 480,
+    price_cny: 552,
     daitu_code: "8E7B67C254E14278",
     fulfill_type: "account",
     channel_tag: "",
@@ -487,7 +503,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Gemini Ultra 20X · 成品号",
     summary: "iOS 正规渠道 200 美元档成品号（交付账号/密码/辅邮/2FA）。",
     description: GEMINI_ULTRA_ACCOUNT_DESC("200 美元档位"),
-    price_cny: 780,
+    cost_cny: 660,
+    price_cny: 759,
     daitu_code: "B9CFC5EAB8580343",
     fulfill_type: "account",
     channel_tag: "",
@@ -500,7 +517,8 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Gemini Ultra 20X · 代充",
     summary: "正规 iOS 200 美元档人工代充至您自有谷歌账号（暂不上架，仅保留配置）。",
     description: GEMINI_ULTRA_TOPUP_DESC,
-    price_cny: 898,
+    cost_cny: 760,
+    price_cny: 874,
     daitu_code: "B7A1E6DC817933A8",
     fulfill_type: "manual",
     channel_tag: "",
@@ -515,6 +533,7 @@ export const CATALOG_ROWS: CatalogRow[] = [
     name: "Claude Pro · 直充月卡（下架）",
     summary: "旧码已失效，已下架。",
     description: "请改选 Claude Pro 成品号。",
+    cost_cny: 0,
     price_cny: 168,
     daitu_code: "307E565E19051098",
     fulfill_type: "card",
@@ -528,16 +547,17 @@ export const CATALOG_ROWS: CatalogRow[] = [
 export function upsertCatalog(database: Database.Database) {
   const insert = database.prepare(`
     INSERT INTO products (
-      slug, name, summary, description, price_cny, daitu_code,
+      slug, name, summary, description, cost_cny, price_cny, daitu_code,
       fulfill_type, channel_tag, account_warning, visible, sort_order
     ) VALUES (
-      @slug, @name, @summary, @description, @price_cny, @daitu_code,
+      @slug, @name, @summary, @description, @cost_cny, @price_cny, @daitu_code,
       @fulfill_type, @channel_tag, @account_warning, @visible, @sort_order
     )
     ON CONFLICT(slug) DO UPDATE SET
       name = excluded.name,
       summary = excluded.summary,
       description = excluded.description,
+      cost_cny = excluded.cost_cny,
       price_cny = excluded.price_cny,
       daitu_code = excluded.daitu_code,
       fulfill_type = excluded.fulfill_type,

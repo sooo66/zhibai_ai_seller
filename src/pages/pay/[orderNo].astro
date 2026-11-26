@@ -3,7 +3,9 @@ import PageLayout from "../../layouts/PageLayout.astro";
 import { getSessionUser } from "../../lib/auth";
 import { expireOpenOrders, getOrderByNo, getProductById } from "../../lib/db";
 import { env } from "../../lib/env";
+import { getFulfillGuide } from "../../lib/fulfill-guide";
 import { getUsdtConfig, paymentStatusLabel } from "../../lib/payment";
+import { resolveShop16688PayUrl } from "../../lib/shop16688";
 
 export const prerender = false;
 
@@ -17,6 +19,9 @@ if (!order) {
 
 const product = getProductById(order.product_id);
 const fulfillType = product?.fulfill_type || "card";
+const guide = getFulfillGuide(product);
+const isAlipay16688 = order.payment_channel === "alipay_16688";
+const shop16688PayUrl = isAlipay16688 ? resolveShop16688PayUrl(product) : "";
 const usdt = getUsdtConfig();
 const payLabel = paymentStatusLabel(order.payment_status);
 const isOpen =
@@ -38,101 +43,92 @@ const isOwnerSession =
     data-fulfill-type={fulfillType}
     data-email={order.email}
   >
-    <h1>USDT 付款</h1>
-    <p class="lead">
-      请向下方地址转入<strong>精确应付金额</strong>（系统用金额自动匹配订单）。无需备注订单号；链上确认后自动发货。
-    </p>
+    <div class="pay-head">
+      <div>
+        <h1>{isAlipay16688 ? "支付宝 / 微信付款" : "USDT 付款"}</h1>
+        <p class="lead">
+          {isAlipay16688 ? (
+            <>
+              点击下方按钮跳转至<strong>收银台对应商品页</strong>，使用支付宝或微信扫码付款；付款时请尽量填写与本站一致的邮箱{" "}
+              <code>{order.email}</code>，付款完成后回到本页领取发货内容。
+            </>
+          ) : (
+            <>
+              请向下方地址转入<strong>精确应付金额</strong>（系统按金额自动匹配订单）。无需备注订单号，链上确认后自动发货。
+            </>
+          )}
+        </p>
+      </div>
+      {
+        isOpen ? (
+          <span class="countdown-pill tabular" data-testid="pay-countdown">计算剩余时间…</span>
+        ) : order.payment_status === "expired" ? (
+          <span class="status-pill expired" data-testid="pay-expired">支付已过期</span>
+        ) : order.payment_status === "paid" ? (
+          <span class="status-pill paid">已完成付款</span>
+        ) : null
+      }
+    </div>
 
     {
-      isOpen ? (
-        <p class="countdown" data-testid="pay-countdown">计算剩余时间…</p>
-      ) : order.payment_status === "expired" ? (
-        <p class="expired-banner" data-testid="pay-expired">
-          支付已过期。若已转账请联系客服并提供交易号，或重新下单。
+      order.payment_status === "expired" ? (
+        <p class="expired-banner">
+          支付窗口已过期。若已转账或已扫码付款，请联系客服 support@magfieldai.top 并提供交易号，或返回重新下单。
         </p>
       ) : null
     }
 
-    <div class="panel">
-      <div class="row"><span>订单号</span><code data-testid="pay-order-no">{order.order_no}</code></div>
-      <div class="row"><span>套餐</span><strong>{order.product_name}</strong></div>
-      <div class="row"><span>接收邮箱</span><strong>{order.email}</strong></div>
-      <div class="row value-row">
-        <span>应付金额</span>
-        <div class="value-actions">
-          <strong data-testid="pay-usdt">{order.amount_usdt} USDT</strong>
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm"
-            data-copy={String(order.amount_usdt)}
-            data-testid="copy-amount"
-          >
-            复制金额
-          </button>
-        </div>
-      </div>
-      <div class="row"><span>参考人民币</span><strong>¥{order.amount_cny}</strong></div>
-      <div class="row"><span>网络</span><strong>{usdt.network}</strong></div>
-      <div class="row value-row">
-        <span>收款地址</span>
-        <div class="value-actions">
-          <code class="break" data-testid="pay-address">{usdt.address}</code>
-          <button
-            type="button"
-            class="btn btn-ghost btn-sm"
-            data-copy={usdt.address}
-            data-testid="copy-address"
-          >
-            复制地址
-          </button>
-        </div>
-      </div>
-      {
-        order.expires_at ? (
-          <div class="row">
-            <span>支付截止</span>
-            <strong data-testid="pay-expires">{order.expires_at}</strong>
-          </div>
-        ) : null
-      }
-      <div class="row"><span>支付状态</span><strong data-testid="pay-status">{payLabel}</strong></div>
-      <div class="row"><span>发货状态</span><strong data-testid="fulfill-status">—</strong></div>
-    </div>
-
+    <!-- Primary Alipay / WeChat CTA placed prominently above details when open -->
     {
-      (product?.account_warning || product?.summary || product?.description) ? (
-        <div class="policy-remind" data-testid="pay-policy-remind">
-          <div class="policy-remind-summary">
-            <strong>购前与售后提示：</strong>
-            {product?.account_warning || product?.summary}
+      isAlipay16688 && isOpen ? (
+        shop16688PayUrl ? (
+          <div class="alipay-cta-box" data-testid="alipay-cta-box">
+            <a
+              class="alipay-cta-btn"
+              href={shop16688PayUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+              data-testid="alipay-16688-link"
+            >
+              前往完成支付宝 / 微信付款 · ¥{order.amount_cny} ↗
+            </a>
+            <p class="alipay-cta-note">
+              点击将在新窗口打开对应商品收银台（请核对商品为 <strong>{order.product_name}</strong>，金额 <strong>¥{order.amount_cny}</strong>）；支持支付宝与微信扫码，付款后请切回本页查看自动发货内容。
+            </p>
           </div>
-          {product?.description ? (
-            <details class="policy-remind-details">
-              <summary>展开查看完整商品说明与售后政策</summary>
-              <pre class="policy-remind-full">{product.description}</pre>
-            </details>
-          ) : null}
-        </div>
+        ) : (
+          <div class="hint" data-testid="alipay-url-missing">
+            该商品暂未绑定收银台直达链接（管理员可在 <code>/admin</code> 后台填写商品编号或直达链接后立即生效）。
+          </div>
+        )
       ) : null
     }
 
-    <div class="hint">
-      金额必须与页面显示的 <code data-testid="pay-usdt-exact">{order.amount_usdt}</code> USDT
-      完全一致（含小数），以便自动匹配。请勿多转或少转。
-    </div>
-    <p id="copy-toast" class="toast" hidden data-testid="copy-toast">已复制</p>
-    <p id="pay-poll-msg" class="poll-msg" data-testid="pay-poll-msg" hidden></p>
-
+    <!-- Delivery Result + Built-in Usage Tutorial (shown automatically once paid & fulfilled) -->
     <div id="deliver-panel" class="deliver" hidden data-testid="deliver-panel">
-      <h2 data-testid="deliver-title">请立即复制 / 截图保存</h2>
+      <div class="deliver-head">
+        <div>
+          <span class="deliver-badge">已发货 · 请妥善保存</span>
+          <h2 data-testid="deliver-title">发货内容与使用教程</h2>
+        </div>
+        <button
+          type="button"
+          class="copy-secret-btn"
+          id="copy-secret-btn"
+          data-testid="copy-secret-btn"
+        >
+          复制发货内容
+        </button>
+      </div>
       <p class="deliver-lead" data-testid="deliver-lead"></p>
+
       <div class="cred-card" data-testid="cred-card">
         <div class="cred-row"><span>订单号</span><code data-testid="cred-order-no">{order.order_no}</code></div>
-        <div class="cred-row"><span>接收邮箱</span><strong data-testid="cred-email">{order.email}</strong></div>
+        <div class="cred-row"><span>归属邮箱</span><strong data-testid="cred-email">{order.email}</strong></div>
         <div class="cred-row">
-          <span>归档状态</span>
+          <span>记录归档</span>
           <strong data-testid="cred-password">
-            {isOwnerSession ? "已绑定当前轻账户，随时可在历史订单查看" : "请前往「历史订单」用邮箱验证码查看"}
+            {isOwnerSession ? "已归档至您的邮箱轻账户" : "可通过顶部「历史订单」使用邮箱验证码随时找回"}
           </strong>
         </div>
         <div class="cred-secret">
@@ -140,26 +136,149 @@ const isOwnerSession =
           <pre data-testid="deliver-secret"></pre>
         </div>
       </div>
+
       <p class="deliver-note" data-testid="deliver-note">
-        请立即复制或截图保存。后续可随时到「历史订单」通过邮箱验证码找回全部订单与发货内容。
+        请立即复制或截图保存，并按下方使用教程完成激活；后续可随时在页面顶部「历史订单」查看全部记录。
       </p>
     </div>
+
+    <!-- Prominent Always-Expanded Usage & Activation Guide -->
+    <div class="guide-card" data-testid="deliver-guide">
+      <div class="guide-card-head">
+        <div>
+          <span class="guide-badge" id="guide-stage-badge">
+            {isOpen ? "付款后操作指南" : "立即激活指南"}
+          </span>
+          <h2>{guide.title}</h2>
+          <p class="guide-sub">{guide.subtitle}</p>
+        </div>
+        {
+          guide.actionUrl ? (
+            <a
+              class="guide-action-link"
+              href={guide.actionUrl}
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              {guide.actionLabel}
+            </a>
+          ) : null
+        }
+      </div>
+      <ol class="guide-steps">
+        {
+          guide.steps.map((step, i) => (
+            <li>
+              <span class="step-num tabular" aria-hidden="true">{i + 1}</span>
+              <span class="step-text">{step}</span>
+            </li>
+          ))
+        }
+      </ol>
+    </div>
+
+    <!-- Order Details Panel -->
+    <div class="panel">
+      <div class="row"><span>订单号</span><code data-testid="pay-order-no">{order.order_no}</code></div>
+      <div class="row"><span>套餐</span><strong>{order.product_name}</strong></div>
+      <div class="row"><span>接收邮箱</span><strong>{order.email}</strong></div>
+      {
+        isAlipay16688 ? (
+          <>
+            <div class="row"><span>支付方式</span><strong>支付宝 / 微信扫码</strong></div>
+            <div class="row"><span>应付金额</span><strong class="tabular" data-testid="pay-cny">¥{order.amount_cny}</strong></div>
+            {product?.shop16688_goods_no ? (
+              <div class="row"><span>商品编号</span><code>{product.shop16688_goods_no}</code></div>
+            ) : null}
+          </>
+        ) : (
+          <>
+            <div class="row value-row">
+              <span>应付金额</span>
+              <div class="value-actions">
+                <strong class="tabular" data-testid="pay-usdt">{order.amount_usdt} USDT</strong>
+                <button
+                  type="button"
+                  class="inline-copy-btn"
+                  data-copy={String(order.amount_usdt)}
+                  data-testid="copy-amount"
+                >
+                  复制金额
+                </button>
+              </div>
+            </div>
+            <div class="row"><span>参考人民币</span><strong class="tabular">¥{order.amount_cny}</strong></div>
+            <div class="row"><span>网络</span><strong>{usdt.network}</strong></div>
+            <div class="row value-row">
+              <span>收款地址</span>
+              <div class="value-actions">
+                <code class="break" data-testid="pay-address">{usdt.address}</code>
+                <button
+                  type="button"
+                  class="inline-copy-btn"
+                  data-copy={usdt.address}
+                  data-testid="copy-address"
+                >
+                  复制地址
+                </button>
+              </div>
+            </div>
+          </>
+        )
+      }
+      {
+        order.expires_at ? (
+          <div class="row">
+            <span>支付截止</span>
+            <strong class="tabular" data-testid="pay-expires">{order.expires_at}</strong>
+          </div>
+        ) : null
+      }
+      <div class="row">
+        <span>支付状态</span>
+        <div class="value-actions">
+          <strong data-testid="pay-status">{payLabel}</strong>
+          {isOpen ? (
+            <button type="button" class="inline-refresh-btn" data-testid="manual-refresh">
+              ↻ 刷新状态
+            </button>
+          ) : null}
+        </div>
+      </div>
+      <div class="row"><span>发货状态</span><strong data-testid="fulfill-status">—</strong></div>
+    </div>
+
+    {
+      !isAlipay16688 && isOpen ? (
+        <div class="hint">
+          金额必须与页面显示的 <code data-testid="pay-usdt-exact">{order.amount_usdt}</code> USDT
+          完全一致（含小数），以便链上自动匹配。请勿多转或少转。
+        </div>
+      ) : null
+    }
+
+    <p id="copy-toast" class="toast" hidden data-testid="copy-toast">已复制</p>
+    <p id="pay-poll-msg" class="poll-msg" data-testid="pay-poll-msg" hidden></p>
 
     {
       isOpen ? (
         <div class="txid-box" data-testid="txid-box">
-          <h2>未自动到账？粘贴交易号</h2>
-          <p class="txid-help">从钱包或交易所复制 TxID / 交易哈希，我们会在链上验真后发货。</p>
+          <h2>{isAlipay16688 ? "已完成扫码付款？粘贴收银台订单号核对" : "未自动到账？粘贴交易号"}</h2>
+          <p class="txid-help">
+            {isAlipay16688
+              ? "完成支付宝 / 微信付款后，可在此输入收银台订单号（如 FF261127...）立即核对并自动发货；若暂未自动到账，可携带单号联系客服确认。"
+              : "从钱包或交易所复制 TxID / 交易哈希，我们会在链上验真后自动发货。"}
+          </p>
           <form id="txid-form" data-testid="txid-form">
             <input
               name="txId"
               required
-              minlength="16"
-              placeholder="64 位交易哈希"
+              minlength={isAlipay16688 ? 6 : 16}
+              placeholder={isAlipay16688 ? "输入收银台订单号（如 FF261127102066）" : "64 位交易哈希"}
               data-testid="txid-input"
             />
             <button type="submit" class="btn btn-primary" data-testid="txid-submit">
-              提交验真
+              {isAlipay16688 ? "核对发货" : "提交验真"}
             </button>
           </form>
           <p id="txid-error" class="error" hidden data-testid="txid-error"></p>
@@ -170,17 +289,19 @@ const isOwnerSession =
     {
       allowSimulate && isOpen ? (
         <div class="sim-box" data-testid="simulate-box">
-          <button type="button" class="btn btn-ghost" data-testid="simulate-pay">
-            模拟支付（开发）
+          <span class="sim-label">本地开发调试工具（生产环境不可见）</span>
+          <button type="button" class="btn btn-sm sim-btn" data-testid="simulate-pay">
+            模拟付款成功并出卡
           </button>
         </div>
       ) : null
     }
 
     <div class="actions">
-      <button type="button" class="btn btn-ghost" data-testid="manual-refresh">手动刷新状态</button>
-      <a class="btn btn-primary" href="/orders" data-testid="goto-orders">历史订单</a>
-      <a class="btn btn-ghost" href="/#subscribe">返回选购</a>
+      <a class="back-link" href="/#subscribe">← 返回订阅方案</a>
+      <span class="support-hint">
+        遇到付款或使用问题？联系 <a href="mailto:support@magfieldai.top">support@magfieldai.top</a>
+      </span>
     </div>
   </section>
 </PageLayout>
@@ -193,9 +314,12 @@ const isOwnerSession =
   const fulfillEl = document.querySelector("[data-testid=fulfill-status]");
   const pollMsg = document.getElementById("pay-poll-msg");
   const deliverPanel = document.getElementById("deliver-panel");
+  const copySecretBtn = document.getElementById("copy-secret-btn") as HTMLButtonElement | null;
   const orderNo = root?.dataset.orderNo || "";
   const fulfillType = root?.dataset.fulfillType || "card";
   const storageKey = `mf_qp_${orderNo}`;
+
+  let deliveredSecretText = "";
 
   function getQueryPassword() {
     try {
@@ -213,27 +337,35 @@ const isOwnerSession =
     return s || "—";
   }
 
+  async function copyText(text: string, label = "已复制") {
+    try {
+      await navigator.clipboard.writeText(text);
+    } catch {
+      const ta = document.createElement("textarea");
+      ta.value = text;
+      document.body.appendChild(ta);
+      ta.select();
+      document.execCommand("copy");
+      ta.remove();
+    }
+    if (toast) {
+      toast.hidden = false;
+      toast.textContent = label;
+      setTimeout(() => {
+        toast.hidden = true;
+      }, 1800);
+    }
+  }
+
   root?.querySelectorAll<HTMLButtonElement>("[data-copy]").forEach((btn) => {
-    btn.addEventListener("click", async () => {
-      const text = btn.dataset.copy || "";
-      try {
-        await navigator.clipboard.writeText(text);
-      } catch {
-        const ta = document.createElement("textarea");
-        ta.value = text;
-        document.body.appendChild(ta);
-        ta.select();
-        document.execCommand("copy");
-        ta.remove();
-      }
-      if (toast) {
-        toast.hidden = false;
-        toast.textContent = "已复制";
-        setTimeout(() => {
-          toast.hidden = true;
-        }, 1500);
-      }
+    btn.addEventListener("click", () => {
+      void copyText(btn.dataset.copy || "");
     });
+  });
+
+  copySecretBtn?.addEventListener("click", () => {
+    if (!deliveredSecretText) return;
+    void copyText(deliveredSecretText, "已复制发货内容");
   });
 
   const expiresAt = root?.dataset.expiresAt;
@@ -247,7 +379,7 @@ const isOwnerSession =
       }
       const m = Math.floor(left / 60000);
       const s = Math.floor((left % 60000) / 1000);
-      countdown.textContent = `剩余支付时间 ${m}:${String(s).padStart(2, "0")}`;
+      countdown.textContent = `剩余 ${m}:${String(s).padStart(2, "0")}`;
     };
     tick();
     setInterval(tick, 1000);
@@ -264,17 +396,17 @@ const isOwnerSession =
   }) {
     if (!deliverPanel) return;
     deliverPanel.hidden = false;
+    deliveredSecretText = data.deliverSecret || "";
     const lead = document.querySelector("[data-testid=deliver-lead]");
-    const note = document.querySelector("[data-testid=deliver-note]");
     const secretLabel = document.querySelector("[data-testid=secret-label]");
     const secretEl = document.querySelector("[data-testid=deliver-secret]");
     if (lead) {
       lead.textContent =
         fulfillType === "account"
-          ? "以下为成品账号资料，请妥善保存。"
+          ? "成品账号资料已发放，请先复制保存，并按下方步骤登录。"
           : fulfillType === "manual"
-            ? "订单已支付并生成人工代充记录，请携带订单号联系客服协助完成自有账号代充。"
-            : "以下为充值卡密，请按说明前往充值站充到你自己的账号。";
+            ? "订单已支付并生成人工代充记录，请按下方步骤联系客服完成代充。"
+            : "充值卡密已自动发放，请复制卡密并按照下方 3 步完成激活。";
     }
     if (secretLabel) {
       secretLabel.textContent =
@@ -284,11 +416,14 @@ const isOwnerSession =
             ? "人工代充凭据"
             : "卡密 / 充值内容";
     }
-    if (secretEl) secretEl.textContent = data.deliverSecret || "";
-    if (note) {
-      note.textContent =
-        "请立即复制或截图。随时可到「历史订单」用当前已验证邮箱找回全部记录。";
-    }
+    if (secretEl) secretEl.textContent = deliveredSecretText;
+
+    // Update guide badge & hide unpaid sections once delivered
+    const guideBadge = document.getElementById("guide-stage-badge");
+    if (guideBadge) guideBadge.textContent = "立即按以下 3 步激活";
+    document.querySelector<HTMLElement>("[data-testid=alipay-cta-box]")?.setAttribute("hidden", "");
+    document.querySelector<HTMLElement>("[data-testid=txid-box]")?.setAttribute("hidden", "");
+    document.querySelector<HTMLElement>("[data-testid=simulate-box]")?.setAttribute("hidden", "");
   }
 
   async function refreshPayment(force = false) {
@@ -296,7 +431,7 @@ const isOwnerSession =
     if (!force && pollCount >= MAX_AUTO_POLLS && phase !== "fulfill") {
       if (pollMsg) {
         pollMsg.hidden = false;
-        pollMsg.textContent = "自动检测已暂停，可点击「手动刷新状态」。";
+        pollMsg.textContent = "自动检测已暂停，付款完成后可点击支付状态旁的「刷新状态」。";
       }
       if (pollTimer) clearInterval(pollTimer);
       return;
@@ -324,7 +459,7 @@ const isOwnerSession =
             if (pollTimer) clearInterval(pollTimer);
           } else if (data.fulfillStatus === "done" && !data.deliverSecret) {
             pollMsg.textContent =
-              "支付与发货已完成。请到「历史订单」使用下单邮箱收验证码查看发货内容。";
+              "支付与发货已完成。请前往顶部「历史订单」使用下单邮箱验证查看发货内容。";
             if (pollTimer) clearInterval(pollTimer);
           } else if (data.fulfillStatus === "error") {
             pollMsg.textContent = data.fulfillError || "发货异常，请联系客服或稍后在历史订单查看。";
@@ -394,7 +529,7 @@ const isOwnerSession =
       });
       const data = await res.json();
       if (!res.ok) {
-        txErr.textContent = data.error || "验真失败";
+        txErr.textContent = data.error || "核对失败";
         txErr.hidden = false;
         return;
       }
@@ -405,7 +540,7 @@ const isOwnerSession =
         refreshPayment(true);
         return;
       }
-      txErr.textContent = "尚未确认到账，请稍后再试（可能仍在上链）";
+      txErr.textContent = "尚未确认到账，请稍后再试";
       txErr.hidden = false;
     } catch {
       txErr.textContent = "网络异常";
@@ -417,38 +552,124 @@ const isOwnerSession =
 </script>
 
 <style>
+  .pay {
+    max-width: 46rem;
+    margin: 0 auto;
+  }
+
+  .pay-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
   .pay h1 {
     margin: 0;
-    font-size: clamp(1.6rem, 3vw, 2.2rem);
+    font-size: clamp(1.55rem, 3vw, 2rem);
+    letter-spacing: -0.025em;
   }
 
   .lead {
-    margin-top: 0.75rem;
+    margin: 0.65rem 0 0;
     color: var(--muted-foreground);
+    font-size: 0.92rem;
     line-height: 1.6;
   }
 
-  .countdown {
-    margin: 1rem 0 0;
-    color: var(--foreground);
-    font-size: 0.95rem;
+  .countdown-pill,
+  .status-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.35rem 0.78rem;
+    border-radius: 999px;
+    font-size: 0.8rem;
     font-weight: 600;
+    white-space: nowrap;
+    background: var(--magnetic-soft);
+    color: var(--magnetic);
+    border: 1px solid var(--magnetic-ring);
+  }
+
+  .status-pill.paid {
+    background: #f0fdf4;
+    color: #15803d;
+    border-color: #bbf7d0;
+  }
+
+  .status-pill.expired {
+    background: #fef2f2;
+    color: #dc2626;
+    border-color: #fecaca;
   }
 
   .expired-banner {
     margin: 1rem 0 0;
+    padding: 0.85rem 1rem;
+    border-radius: 0.85rem;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
     color: #b42318;
-    font-size: 0.95rem;
+    font-size: 0.88rem;
+    line-height: 1.55;
+  }
+
+  .alipay-cta-box {
+    margin-top: 1.25rem;
+    padding: 1.15rem 1.25rem;
+    border-radius: 1rem;
+    border: 1px solid rgba(22, 119, 255, 0.24);
+    background: linear-gradient(180deg, #f5f9ff 0%, #ffffff 100%);
+    display: flex;
+    flex-direction: column;
+    gap: 0.7rem;
+  }
+
+  .alipay-cta-box[hidden],
+  .guide-preview[hidden],
+  .txid-box[hidden],
+  .sim-box[hidden],
+  .deliver[hidden] {
+    display: none;
+  }
+
+  .alipay-cta-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 100%;
+    height: 3rem;
+    border-radius: 0.85rem;
+    background: #1677ff;
+    color: #ffffff;
+    font-size: 0.96rem;
+    font-weight: 600;
+    text-decoration: none;
+    box-shadow: 0 8px 20px -10px rgba(22, 119, 255, 0.65);
+    transition: background 0.15s ease, transform 0.12s ease;
+  }
+
+  .alipay-cta-btn:hover {
+    background: #0958d9;
+    transform: translateY(-1px);
+  }
+
+  .alipay-cta-note {
+    margin: 0;
+    font-size: 0.83rem;
+    line-height: 1.55;
+    color: var(--muted-foreground);
   }
 
   .panel {
-    margin-top: 1.25rem;
+    margin-top: 1.15rem;
     border: 1px solid var(--border);
     border-radius: 1rem;
     background: var(--surface);
-    padding: 1.25rem 1.4rem;
+    padding: 1.2rem 1.35rem;
     display: grid;
-    gap: 0.9rem;
+    gap: 0.85rem;
   }
 
   .row {
@@ -474,7 +695,7 @@ const isOwnerSession =
 
   .row span {
     color: var(--muted-foreground);
-    font-size: 0.9rem;
+    font-size: 0.88rem;
   }
 
   .value-actions {
@@ -485,102 +706,99 @@ const isOwnerSession =
     justify-content: flex-end;
   }
 
+  .inline-copy-btn,
+  .inline-refresh-btn {
+    border: 1px solid var(--border-strong);
+    border-radius: 999px;
+    background: var(--background);
+    color: var(--foreground);
+    padding: 0.24rem 0.7rem;
+    font: inherit;
+    font-size: 0.76rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: background 0.14s ease, border-color 0.14s ease, color 0.14s ease;
+  }
+
+  .inline-copy-btn:hover,
+  .inline-refresh-btn:hover {
+    border-color: var(--magnetic);
+    color: var(--magnetic);
+    background: var(--magnetic-soft);
+  }
+
   code {
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.9rem;
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
   }
 
   .break {
     word-break: break-all;
   }
 
-  .policy-remind {
-    margin-top: 1rem;
-    padding: 0.9rem 1.05rem;
-    border-radius: 0.9rem;
-    border: 1px solid var(--amber-border);
-    background: var(--amber-bg);
-    color: var(--amber-text);
-    font-size: 0.86rem;
-    line-height: 1.55;
-  }
-
-  .policy-remind-details {
-    margin-top: 0.6rem;
-    padding-top: 0.55rem;
-    border-top: 1px dashed var(--amber-border);
-  }
-
-  .policy-remind-details summary {
-    cursor: pointer;
-    font-weight: 600;
-    font-size: 0.82rem;
-  }
-
-  .policy-remind-full {
-    margin: 0.6rem 0 0;
-    padding: 0.75rem 0.85rem;
-    border-radius: 0.65rem;
-    background: rgba(255, 255, 255, 0.75);
-    color: var(--foreground);
-    font-family: inherit;
-    font-size: 0.8rem;
-    line-height: 1.6;
-    white-space: pre-wrap;
-    word-break: break-word;
-    max-height: 20rem;
-    overflow-y: auto;
-  }
-
-  .hint {
-    margin-top: 0.85rem;
-    padding: 1rem 1.1rem;
-    border-radius: 0.9rem;
-    border: 1px solid var(--magnetic-ring);
-    background: var(--magnetic-soft);
-    font-size: 0.9rem;
-    line-height: 1.55;
-  }
-
-  .toast {
-    margin-top: 0.75rem;
-    color: #067647;
-    font-size: 0.9rem;
-  }
-
-  .poll-msg {
-    margin-top: 0.75rem;
-    color: #067647;
-    font-size: 0.92rem;
-  }
-
+  /* Delivered Card + Built-in 3-Step Usage Tutorial */
   .deliver {
     margin-top: 1.25rem;
-    padding: 1.2rem 1.3rem;
-    border-radius: 1rem;
-    border: 1px solid #b45309;
-    background: #fffbeb;
+    padding: 1.3rem 1.4rem;
+    border-radius: 1.1rem;
+    border: 1px solid #bbf7d0;
+    background: linear-gradient(180deg, #f0fdf4 0%, #ffffff 100%);
+  }
+
+  .deliver-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
+  .deliver-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #15803d;
+    background: #dcfce7;
+    padding: 0.16rem 0.55rem;
+    border-radius: 999px;
   }
 
   .deliver h2 {
-    margin: 0;
-    font-size: 1.1rem;
-    color: #9a3412;
+    margin: 0.4rem 0 0;
+    font-size: 1.15rem;
+    color: var(--foreground);
+  }
+
+  .copy-secret-btn {
+    border: 1px solid #16a34a;
+    border-radius: 999px;
+    background: #16a34a;
+    color: #ffffff;
+    padding: 0.42rem 0.95rem;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s ease;
+  }
+
+  .copy-secret-btn:hover {
+    background: #15803d;
   }
 
   .deliver-lead {
-    margin: 0.45rem 0 0.9rem;
-    font-size: 0.9rem;
-    color: #92400e;
+    margin: 0.5rem 0 1rem;
+    font-size: 0.88rem;
+    color: #166534;
   }
 
   .cred-card {
     display: grid;
     gap: 0.65rem;
-    padding: 1rem;
+    padding: 1rem 1.1rem;
     border-radius: 0.85rem;
-    background: #fff;
-    border: 1px solid #fcd34d;
+    background: #ffffff;
+    border: 1px solid #bbf7d0;
   }
 
   .cred-row {
@@ -588,7 +806,7 @@ const isOwnerSession =
     justify-content: space-between;
     gap: 0.75rem;
     flex-wrap: wrap;
-    font-size: 0.92rem;
+    font-size: 0.88rem;
   }
 
   .cred-row span {
@@ -597,74 +815,271 @@ const isOwnerSession =
 
   .cred-secret {
     margin-top: 0.25rem;
-    padding-top: 0.65rem;
-    border-top: 1px dashed #fcd34d;
+    padding-top: 0.7rem;
+    border-top: 1px dashed #86efac;
   }
 
   .cred-secret .muted {
     color: var(--muted-foreground);
-    font-size: 0.85rem;
+    font-size: 0.8rem;
   }
 
   .cred-secret pre {
     margin: 0.45rem 0 0;
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.65rem;
+    background: #f8fafc;
+    border: 1px solid var(--border);
     white-space: pre-wrap;
     word-break: break-all;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-    font-size: 0.92rem;
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    color: var(--foreground);
   }
 
   .deliver-note {
     margin: 0.85rem 0 0;
-    font-size: 0.85rem;
-    color: #92400e;
+    font-size: 0.82rem;
+    color: #166534;
   }
 
-  .txid-box,
-  .sim-box {
-    margin-top: 1.5rem;
+  /* Prominent Standalone Usage Guide Card */
+  .guide-card {
+    margin-top: 1.15rem;
+    padding: 1.3rem 1.4rem;
+    border-radius: 1.05rem;
+    border: 1px solid rgba(37, 99, 235, 0.24);
+    background: linear-gradient(180deg, #f5f8ff 0%, #ffffff 100%);
+    box-shadow: 0 10px 28px -20px rgba(37, 99, 235, 0.35);
+  }
+
+  .guide-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 0.9rem;
+    flex-wrap: wrap;
+    padding-bottom: 0.95rem;
+    border-bottom: 1px solid rgba(37, 99, 235, 0.14);
+  }
+
+  .guide-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: var(--magnetic);
+    background: rgba(37, 99, 235, 0.11);
+    padding: 0.18rem 0.6rem;
+    border-radius: 999px;
+  }
+
+  .guide-card-head h2 {
+    margin: 0.45rem 0 0;
+    font-size: 1.08rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+    color: var(--foreground);
+  }
+
+  .guide-sub {
+    margin: 0.3rem 0 0;
+    font-size: 0.83rem;
+    color: var(--muted-foreground);
+  }
+
+  .guide-action-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.45rem 0.95rem;
+    border-radius: 999px;
+    background: var(--magnetic);
+    color: #ffffff;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-decoration: none;
+    white-space: nowrap;
+    box-shadow: 0 6px 14px -8px rgba(37, 99, 235, 0.75);
+    transition: background 0.15s ease, transform 0.12s ease;
+  }
+
+  .guide-action-link:hover {
+    background: #1d4ed8;
+    transform: translateY(-1px);
+  }
+
+  .guide-steps {
+    margin: 1rem 0 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 0.75rem;
+  }
+
+  .guide-steps li {
+    display: grid;
+    grid-template-columns: 1.65rem minmax(0, 1fr);
+    gap: 0.75rem;
+    align-items: start;
+    font-size: 0.88rem;
+    line-height: 1.6;
+    color: var(--foreground);
+  }
+
+  .step-num {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.65rem;
+    height: 1.65rem;
+    border-radius: 999px;
+    background: var(--magnetic);
+    color: #ffffff;
+    font-size: 0.78rem;
+    font-weight: 700;
+    margin-top: 0.05rem;
+  }
+
+  .step-text {
+    display: block;
+  }
+
+  .hint {
+    margin-top: 0.85rem;
+    padding: 0.95rem 1.1rem;
+    border-radius: 0.9rem;
+    border: 1px solid var(--magnetic-ring);
+    background: var(--magnetic-soft);
+    font-size: 0.88rem;
+    line-height: 1.55;
+  }
+
+  .toast {
+    margin-top: 0.75rem;
+    color: #067647;
+    font-size: 0.88rem;
+    font-weight: 500;
+  }
+
+  .poll-msg {
+    margin-top: 0.75rem;
+    color: #067647;
+    font-size: 0.88rem;
+  }
+
+  .txid-box {
+    margin-top: 1.15rem;
     border: 1px solid var(--border);
     border-radius: 1rem;
-    padding: 1.1rem 1.2rem;
+    padding: 1.1rem 1.25rem;
     background: var(--surface);
   }
 
   .txid-box h2 {
     margin: 0;
-    font-size: 1.05rem;
+    font-size: 0.98rem;
   }
 
   .txid-help {
-    margin: 0.45rem 0 0.9rem;
+    margin: 0.4rem 0 0.85rem;
     color: var(--muted-foreground);
-    font-size: 0.88rem;
+    font-size: 0.84rem;
+    line-height: 1.55;
   }
 
   #txid-form {
     display: flex;
     flex-wrap: wrap;
     gap: 0.6rem;
+    align-items: center;
   }
 
   #txid-form input {
     flex: 1 1 14rem;
-    border: 1px solid var(--border);
-    border-radius: 0.7rem;
-    background: var(--surface);
+    height: 2.55rem;
+    border: 1px solid var(--border-strong);
+    border-radius: 0.75rem;
+    background: var(--background);
     color: var(--foreground);
-    padding: 0.7rem 0.85rem;
+    padding: 0 0.9rem;
+    font-size: 0.88rem;
   }
 
   .error {
     margin: 0.6rem 0 0;
     color: #b42318;
-    font-size: 0.9rem;
+    font-size: 0.86rem;
+  }
+
+  .sim-box {
+    margin-top: 1rem;
+    padding: 0.75rem 1rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: 0.85rem;
+    background: var(--background);
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+  }
+
+  .sim-label {
+    font-size: 0.78rem;
+    color: var(--muted-foreground);
+  }
+
+  .sim-btn {
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--foreground);
+  }
+
+  .sim-btn:hover {
+    border-color: var(--magnetic);
+    color: var(--magnetic);
   }
 
   .actions {
-    margin-top: 1.5rem;
+    margin-top: 1.75rem;
+    padding-top: 1.15rem;
+    border-top: 1px solid var(--border);
     display: flex;
+    align-items: center;
+    justify-content: space-between;
     flex-wrap: wrap;
     gap: 0.75rem;
+  }
+
+  .back-link {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.45rem 0.95rem;
+    border-radius: 999px;
+    border: 1px solid var(--border-strong);
+    background: var(--surface);
+    color: var(--foreground);
+    font-size: 0.84rem;
+    font-weight: 500;
+    text-decoration: none;
+    transition: border-color 0.15s ease, background 0.15s ease;
+  }
+
+  .back-link:hover {
+    border-color: rgba(15, 23, 42, 0.28);
+    background: var(--card);
+  }
+
+  .support-hint {
+    font-size: 0.8rem;
+    color: var(--muted-foreground);
+  }
+
+  .support-hint a {
+    color: var(--magnetic);
+    text-decoration: none;
+  }
+
+  .support-hint a:hover {
+    text-decoration: underline;
   }
 </style>
