@@ -6,7 +6,7 @@ import { env } from "./env";
 import { hashQueryPassword } from "./query-password";
 import { allocateUniqueUsdtAmount, getPaymentTtlMinutes } from "./usdt-amount";
 
-export type FulfillType = "card" | "account";
+export type FulfillType = "card" | "account" | "manual";
 
 export type Product = {
   id: number;
@@ -24,6 +24,23 @@ export type Product = {
   created_at: string;
 };
 
+export type User = {
+  id: number;
+  email: string;
+  created_at: string;
+  last_login_at: string;
+};
+
+export type EmailOtpRow = {
+  id: number;
+  email: string;
+  code_hash: string;
+  attempts: number;
+  expires_at: string;
+  consumed_at: string | null;
+  created_at: string;
+};
+
 export type PaymentStatus =
   | "pending"
   | "confirming"
@@ -37,6 +54,7 @@ export type Order = {
   order_no: string;
   product_id: number;
   product_name: string;
+  user_id: number | null;
   email: string;
   query_password_hash: string;
   amount_cny: number;
@@ -87,6 +105,9 @@ function migrateSchema(database: Database.Database) {
       `ALTER TABLE orders ADD COLUMN query_password_hash TEXT NOT NULL DEFAULT ''`,
     );
   }
+  if (!columnExists(database, "orders", "user_id")) {
+    database.exec(`ALTER TABLE orders ADD COLUMN user_id INTEGER`);
+  }
   if (!columnExists(database, "products", "fulfill_type")) {
     database.exec(
       `ALTER TABLE products ADD COLUMN fulfill_type TEXT NOT NULL DEFAULT 'card'`,
@@ -102,6 +123,36 @@ function migrateSchema(database: Database.Database) {
       `ALTER TABLE products ADD COLUMN account_warning TEXT NOT NULL DEFAULT ''`,
     );
   }
+
+  database.exec(`
+    CREATE TABLE IF NOT EXISTS users (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_login_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS email_otps (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL COLLATE NOCASE,
+      code_hash TEXT NOT NULL,
+      attempts INTEGER NOT NULL DEFAULT 0,
+      expires_at TEXT NOT NULL,
+      consumed_at TEXT,
+      created_at TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS user_sessions (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      user_id INTEGER NOT NULL,
+      token_hash TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL DEFAULT (datetime('now')),
+      last_seen_at TEXT NOT NULL DEFAULT (datetime('now')),
+      FOREIGN KEY(user_id) REFERENCES users(id)
+    );
+  `);
+
   database.exec(
     `CREATE UNIQUE INDEX IF NOT EXISTS idx_orders_payment_tx_id
      ON orders(payment_tx_id) WHERE payment_tx_id IS NOT NULL`,
@@ -109,6 +160,22 @@ function migrateSchema(database: Database.Database) {
   database.exec(
     `CREATE INDEX IF NOT EXISTS idx_orders_email_pwd
      ON orders(email, query_password_hash)`,
+  );
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_orders_email
+     ON orders(email COLLATE NOCASE)`,
+  );
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_orders_user_id
+     ON orders(user_id)`,
+  );
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_email_otps_email
+     ON email_otps(email COLLATE NOCASE, id DESC)`,
+  );
+  database.exec(
+    `CREATE INDEX IF NOT EXISTS idx_user_sessions_user
+     ON user_sessions(user_id)`,
   );
 }
 
@@ -218,28 +285,212 @@ export function updateProduct(
   return getProductById(id);
 }
 
+/* ---------------- Lightweight OTP User & Session Queries ---------------- */
+
+export function upsertUserByEmail(email: string): User {
+  const normalized = email.trim().toLowerCase();
+  const database = getDb();
+  database
+    .prepare(
+      `INSERT INTO users (email, created_at, last_login_at)
+       VALUES (?, datetime('now'), datetime('now'))
+       ON CONFLICT(email) DO UPDATE SET last_login_at = datetime('now')`,
+    )
+    .run(normalized);
+  const user = database
+    .prepare("SELECT * FROM users WHERE email = ? COLLATE NOCASE")
+    .get(normalized) as User;
+  // Backfill any earlier orders under the same verified email
+  database
+    .prepare(
+      `UPDATE orders SET user_id = ?
+       WHERE user_id IS NULL AND email = ? COLLATE NOCASE`,
+    )
+    .run(user.id, normalized);
+  return user;
+}
+
+export function getLatestOtpForEmail(email: string) {
+  return getDb()
+    .prepare(
+      `SELECT * FROM email_otps
+       WHERE email = ? COLLATE NOCASE
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(email.trim().toLowerCase()) as EmailOtpRow | undefined;
+}
+
+export function countOtpsForEmailInLastHour(email: string): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS cnt FROM email_otps
+       WHERE email = ? COLLATE NOCASE
+         AND created_at >= datetime('now', '-1 hour')`,
+    )
+    .get(email.trim().toLowerCase()) as { cnt: number } | undefined;
+  return row?.cnt ?? 0;
+}
+
+export function countOtpsSentToday(): number {
+  const row = getDb()
+    .prepare(
+      `SELECT COUNT(*) AS cnt FROM email_otps
+       WHERE created_at >= datetime('now', 'start of day')`,
+    )
+    .get() as { cnt: number } | undefined;
+  return row?.cnt ?? 0;
+}
+
+export function createEmailOtp(input: {
+  email: string;
+  codeHash: string;
+  ttlMinutes: number;
+}) {
+  const normalized = input.email.trim().toLowerCase();
+  const database = getDb();
+  // Invalidate any prior unused OTP for this email
+  database
+    .prepare(
+      `UPDATE email_otps SET consumed_at = datetime('now')
+       WHERE email = ? COLLATE NOCASE AND consumed_at IS NULL`,
+    )
+    .run(normalized);
+  database
+    .prepare(
+      `INSERT INTO email_otps (email, code_hash, expires_at)
+       VALUES (?, ?, datetime('now', ?))`,
+    )
+    .run(normalized, input.codeHash, `+${input.ttlMinutes} minutes`);
+}
+
+export function getActiveOtpForEmail(email: string) {
+  return getDb()
+    .prepare(
+      `SELECT * FROM email_otps
+       WHERE email = ? COLLATE NOCASE
+         AND consumed_at IS NULL
+         AND expires_at > datetime('now')
+       ORDER BY id DESC LIMIT 1`,
+    )
+    .get(email.trim().toLowerCase()) as EmailOtpRow | undefined;
+}
+
+export function incrementOtpAttempts(id: number) {
+  getDb()
+    .prepare("UPDATE email_otps SET attempts = attempts + 1 WHERE id = ?")
+    .run(id);
+}
+
+export function consumeEmailOtp(id: number) {
+  getDb()
+    .prepare("UPDATE email_otps SET consumed_at = datetime('now') WHERE id = ?")
+    .run(id);
+}
+
+export function insertUserSession(input: {
+  userId: number;
+  tokenHash: string;
+  ttlDays: number;
+}) {
+  const database = getDb();
+  // Opportunistic cleanup of expired sessions
+  database
+    .prepare("DELETE FROM user_sessions WHERE expires_at <= datetime('now')")
+    .run();
+  database
+    .prepare(
+      `INSERT INTO user_sessions (user_id, token_hash, expires_at, last_seen_at)
+       VALUES (?, ?, datetime('now', ?), datetime('now'))`,
+    )
+    .run(input.userId, input.tokenHash, `+${input.ttlDays} days`);
+}
+
+export function findSessionUserByTokenHash(tokenHash: string): {
+  sessionId: number;
+  user: User;
+  lastSeenAt: string;
+} | null {
+  const row = getDb()
+    .prepare(
+      `SELECT
+         s.id AS session_id,
+         s.last_seen_at AS session_last_seen_at,
+         u.id AS user_id,
+         u.email AS user_email,
+         u.created_at AS user_created_at,
+         u.last_login_at AS user_last_login_at
+       FROM user_sessions s
+       JOIN users u ON u.id = s.user_id
+       WHERE s.token_hash = ? AND s.expires_at > datetime('now')`,
+    )
+    .get(tokenHash) as
+    | {
+        session_id: number;
+        session_last_seen_at: string;
+        user_id: number;
+        user_email: string;
+        user_created_at: string;
+        user_last_login_at: string;
+      }
+    | undefined;
+  if (!row) return null;
+  return {
+    sessionId: row.session_id,
+    lastSeenAt: row.session_last_seen_at,
+    user: {
+      id: row.user_id,
+      email: row.user_email,
+      created_at: row.user_created_at,
+      last_login_at: row.user_last_login_at,
+    },
+  };
+}
+
+export function touchUserSession(sessionId: number, ttlDays: number) {
+  getDb()
+    .prepare(
+      `UPDATE user_sessions
+       SET last_seen_at = datetime('now'),
+           expires_at = datetime('now', ?)
+       WHERE id = ?`,
+    )
+    .run(`+${ttlDays} days`, sessionId);
+}
+
+export function deleteUserSessionByTokenHash(tokenHash: string) {
+  getDb()
+    .prepare("DELETE FROM user_sessions WHERE token_hash = ?")
+    .run(tokenHash);
+}
+
+/* ---------------- Order Queries ---------------- */
+
 export function createOrder(input: {
   product: Product;
   email: string;
-  queryPassword: string;
+  userId?: number | null;
+  queryPassword?: string;
 }) {
   const database = getDb();
   const orderNo = `Z${Date.now()}${Math.floor(Math.random() * 900 + 100)}`;
   const amountUsdt = allocateUniqueUsdtAmount(database, input.product.price_cny);
   const ttl = getPaymentTtlMinutes();
-  const queryPasswordHash = hashQueryPassword(input.queryPassword);
+  const queryPasswordHash = input.queryPassword
+    ? hashQueryPassword(input.queryPassword)
+    : "";
 
   database
     .prepare(
       `INSERT INTO orders (
-        order_no, product_id, product_name, email, query_password_hash,
+        order_no, product_id, product_name, user_id, email, query_password_hash,
         amount_cny, amount_usdt, payment_channel, expires_at
-      ) VALUES (?, ?, ?, ?, ?, ?, ?, 'usdt_trc20', datetime('now', ?))`,
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'usdt_trc20', datetime('now', ?))`,
     )
     .run(
       orderNo,
       input.product.id,
       input.product.name,
+      input.userId ?? null,
       input.email.trim().toLowerCase(),
       queryPasswordHash,
       input.product.price_cny,
@@ -261,6 +512,26 @@ export function findOrder(orderNo: string, email: string) {
       "SELECT * FROM orders WHERE order_no = ? AND email = ? COLLATE NOCASE",
     )
     .get(orderNo, email.trim().toLowerCase()) as Order | undefined;
+}
+
+export function findOrdersByVerifiedEmail(email: string, userId?: number) {
+  const normalized = email.trim().toLowerCase();
+  if (userId) {
+    return getDb()
+      .prepare(
+        `SELECT * FROM orders
+         WHERE user_id = ? OR email = ? COLLATE NOCASE
+         ORDER BY id DESC`,
+      )
+      .all(userId, normalized) as Order[];
+  }
+  return getDb()
+    .prepare(
+      `SELECT * FROM orders
+       WHERE email = ? COLLATE NOCASE
+       ORDER BY id DESC`,
+    )
+    .all(normalized) as Order[];
 }
 
 export function findOrdersByEmailAndPasswordHash(

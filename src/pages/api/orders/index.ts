@@ -1,20 +1,29 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
+import { getSessionUser } from "../../../lib/auth";
+import { getDaituSyncSnapshot, isInStock } from "../../../lib/daitu-stock";
 import { createOrder, getProductById } from "../../../lib/db";
-import { assertValidQueryPassword } from "../../../lib/query-password";
 
 export const prerender = false;
 
 const schema = z.object({
   productId: z.number().int().positive(),
-  email: z.string().email(),
-  queryPassword: z.string().min(6).max(12),
 });
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, cookies }) => {
   try {
+    const user = getSessionUser(cookies);
+    if (!user) {
+      return new Response(
+        JSON.stringify({
+          error: "请先完成邮箱验证码验证后再下单",
+          code: "AUTH_REQUIRED",
+        }),
+        { status: 401, headers: { "Content-Type": "application/json" } },
+      );
+    }
+
     const body = schema.parse(await request.json());
-    assertValidQueryPassword(body.queryPassword);
     const product = getProductById(body.productId);
     if (!product || !product.visible) {
       return new Response(JSON.stringify({ error: "商品不存在或未上架" }), {
@@ -22,10 +31,17 @@ export const POST: APIRoute = async ({ request }) => {
         headers: { "Content-Type": "application/json" },
       });
     }
+    const syncSnap = await getDaituSyncSnapshot();
+    if (!isInStock(syncSnap.stockByCode, product.daitu_code)) {
+      return new Response(
+        JSON.stringify({ error: "该套餐当前已售罄，请刷新页面选择其他规格" }),
+        { status: 409, headers: { "Content-Type": "application/json" } },
+      );
+    }
     const order = createOrder({
       product,
-      email: body.email,
-      queryPassword: body.queryPassword,
+      email: user.email,
+      userId: user.id,
     });
     return new Response(
       JSON.stringify({

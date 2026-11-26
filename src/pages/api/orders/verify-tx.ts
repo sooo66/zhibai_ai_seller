@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
+import { getSessionUser } from "../../../lib/auth";
 import { orderPublicView } from "../../../lib/payment-confirm";
 import { verifyTxForOrder } from "../../../lib/payment-watcher";
 import { paymentStatusLabel } from "../../../lib/payment";
@@ -11,13 +12,23 @@ const schema = z.object({
   txId: z.string().min(16),
 });
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, cookies }) => {
   try {
     const body = schema.parse(await request.json());
     const order = await verifyTxForOrder(body.orderNo, body.txId);
+    if (!order) {
+      return new Response(JSON.stringify({ error: "订单不存在" }), {
+        status: 404,
+        headers: { "Content-Type": "application/json" },
+      });
+    }
+    const sessionUser = getSessionUser(cookies);
     return new Response(
       JSON.stringify({
-        ...orderPublicView(order),
+        ...orderPublicView(order, {
+          sessionEmail: sessionUser?.email ?? null,
+          includeSecret: true,
+        }),
         paymentStatusLabel: paymentStatusLabel(order.payment_status),
       }),
       { status: 200, headers: { "Content-Type": "application/json" } },

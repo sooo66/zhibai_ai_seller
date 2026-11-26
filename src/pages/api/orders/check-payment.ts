@@ -1,5 +1,6 @@
 import type { APIRoute } from "astro";
 import { z } from "zod";
+import { getSessionUser } from "../../../lib/auth";
 import { orderPublicView } from "../../../lib/payment-confirm";
 import { checkOrderPayment } from "../../../lib/payment-watcher";
 import { paymentStatusLabel } from "../../../lib/payment";
@@ -11,11 +12,13 @@ const schema = z.object({
   queryPassword: z.string().min(6).max(12).optional(),
 });
 
-export const POST: APIRoute = async ({ request }) => {
+export const POST: APIRoute = async ({ request, cookies }) => {
   try {
     const body = schema.parse(await request.json());
     const order = await checkOrderPayment(body.orderNo);
+    const sessionUser = getSessionUser(cookies);
     const view = orderPublicView(order, {
+      sessionEmail: sessionUser?.email ?? null,
       queryPassword: body.queryPassword,
       includeSecret: true,
     });

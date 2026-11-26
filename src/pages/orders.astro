@@ -1,59 +1,179 @@
 ---
 import PageLayout from "../layouts/PageLayout.astro";
+import { getSessionUser } from "../lib/auth";
+import {
+  expireOpenOrders,
+  findOrdersByVerifiedEmail,
+  getProductById,
+} from "../lib/db";
 
 export const prerender = false;
 
-const email = Astro.url.searchParams.get("email") || "";
-const orderNo = Astro.url.searchParams.get("orderNo") || "";
+expireOpenOrders();
+
+const emailParam = Astro.url.searchParams.get("email") || "";
+const orderNoParam = Astro.url.searchParams.get("orderNo") || "";
+const sessionUser = getSessionUser(Astro.cookies);
+
+const initialOrders = sessionUser
+  ? findOrdersByVerifiedEmail(sessionUser.email, sessionUser.id).map((o) => {
+      const p = getProductById(o.product_id);
+      return {
+        orderNo: o.order_no,
+        productName: o.product_name,
+        email: o.email,
+        amountCny: o.amount_cny,
+        amountUsdt: o.amount_usdt,
+        paymentStatus: o.payment_status,
+        fulfillStatus: o.fulfill_status,
+        fulfillType: p?.fulfill_type || "card",
+        deliverSecret: o.deliver_secret,
+        fulfillError: o.fulfill_error,
+        createdAt: o.created_at,
+      };
+    })
+  : [];
 ---
 
 <PageLayout title="历史订单 · Magfield">
-  <section class="orders" data-testid="orders-page">
+  <section
+    class="orders"
+    data-testid="orders-page"
+    data-user-email={sessionUser?.email || ""}
+    data-initial-orders={JSON.stringify(initialOrders)}
+  >
     <h1>历史订单</h1>
-    <p class="lead">用查单邮箱 + 查单密码查看你的订单与发货内容。不设账号登录。</p>
+    <p class="lead">
+      通过邮箱一次性验证码登录轻账户，查看全部历史订单与发货内容；验证后自动保持 90 天登录状态。
+    </p>
 
-    <div class="panel">
-      <h2>邮箱 + 密码</h2>
-      <form id="list-form" data-testid="list-form">
+    <!-- Signed-in Orders Panel -->
+    <div
+      class="panel"
+      id="orders-signed-panel"
+      data-testid="orders-signed-panel"
+      hidden={!sessionUser}
+    >
+      <div class="signed-head">
+        <div>
+          <span class="signed-badge">已验证轻账户</span>
+          <strong class="signed-email" id="orders-user-email">
+            {sessionUser?.email || ""}
+          </strong>
+        </div>
+        <div class="signed-actions">
+          <button type="button" class="btn btn-ghost btn-sm" id="refresh-orders-btn">
+            刷新列表
+          </button>
+          <button
+            type="button"
+            class="btn btn-ghost btn-sm"
+            id="orders-logout-btn"
+            data-testid="orders-logout-btn"
+          >
+            切换邮箱
+          </button>
+        </div>
+      </div>
+      <div id="my-orders-list" class="result-list" data-testid="list-result"></div>
+    </div>
+
+    <!-- OTP Login Panel -->
+    <div
+      class="panel"
+      id="orders-login-panel"
+      data-testid="orders-login-panel"
+      hidden={Boolean(sessionUser)}
+    >
+      <h2>邮箱验证码登录</h2>
+      <form id="otp-login-form" data-testid="list-form">
         <label>
-          查单邮箱
+          邮箱地址
           <input
             type="email"
             name="email"
+            id="orders-email-input"
             required
-            value={email}
+            placeholder="you@example.com"
+            value={emailParam}
+            autocomplete="email"
             data-testid="list-email"
           />
         </label>
         <label>
-          查单密码
-          <input
-            type="text"
-            name="queryPassword"
-            required
-            minlength="6"
-            maxlength="12"
-            pattern="[A-Za-z0-9]{6,12}"
-            autocomplete="off"
-            spellcheck="false"
-            data-testid="list-password"
-          />
+          人机验证（点击图片可刷新）
+          <div class="otp-row">
+            <input
+              type="text"
+              name="captchaCode"
+              id="orders-captcha-input"
+              maxlength="4"
+              placeholder="输入右侧 4 位图形字符"
+              autocomplete="off"
+              spellcheck="false"
+              data-testid="orders-captcha-input"
+            />
+            <button
+              type="button"
+              class="captcha-img-btn"
+              id="orders-captcha-refresh"
+              title="点击刷新图形验证码"
+              aria-label="刷新图形验证码"
+              data-testid="orders-captcha-refresh"
+            >
+              <img
+                id="orders-captcha-img"
+                alt="图形验证码"
+                width="118"
+                height="40"
+              />
+            </button>
+          </div>
         </label>
+        <label>
+          6 位邮箱验证码
+          <div class="otp-row">
+            <input
+              type="text"
+              name="otpCode"
+              id="orders-otp-input"
+              required
+              inputmode="numeric"
+              maxlength="6"
+              pattern="[0-9]{6}"
+              placeholder="请输入邮箱收到的 6 位数字验证码"
+              autocomplete="one-time-code"
+              spellcheck="false"
+              data-testid="orders-otp-input"
+            />
+            <button
+              type="button"
+              class="btn btn-ghost send-otp-btn tabular"
+              id="orders-send-otp-btn"
+              data-testid="orders-send-otp-btn"
+            >
+              获取验证码
+            </button>
+          </div>
+        </label>
+        <p id="orders-otp-status" class="status-hint" hidden></p>
         <p id="list-error" class="error" hidden data-testid="list-error"></p>
-        <button type="submit" class="btn btn-primary" data-testid="list-submit">查询历史</button>
+        <button type="submit" class="btn btn-primary" data-testid="list-submit">
+          验证并查看历史订单
+        </button>
       </form>
-      <div id="list-result" class="result-list" hidden data-testid="list-result"></div>
     </div>
 
-    <div class="panel secondary">
-      <h2>备用：订单号 + 密码</h2>
+    <!-- Legacy Order Password Fallback (collapsed) -->
+    <details class="legacy-box">
+      <summary>旧版查单密码找回（仅适用于历史旧订单）</summary>
       <form id="single-form" data-testid="single-form">
         <label>
           订单号
-          <input name="orderNo" required value={orderNo} data-testid="single-order-no" />
+          <input name="orderNo" required value={orderNoParam} data-testid="single-order-no" />
         </label>
         <label>
-          查单密码
+          旧查单密码
           <input
             type="text"
             name="queryPassword"
@@ -67,14 +187,30 @@ const orderNo = Astro.url.searchParams.get("orderNo") || "";
           />
         </label>
         <p id="single-error" class="error" hidden data-testid="single-error"></p>
-        <button type="submit" class="btn btn-ghost" data-testid="single-submit">查询单笔</button>
+        <button type="submit" class="btn btn-ghost" data-testid="single-submit">
+          查询旧单
+        </button>
       </form>
       <div id="single-result" class="result-list" hidden data-testid="single-result"></div>
-    </div>
+    </details>
   </section>
 </PageLayout>
 
 <script>
+  type OrderItem = {
+    orderNo: string;
+    productName: string;
+    email: string;
+    amountUsdt: number;
+    amountCny: number;
+    paymentStatus: string;
+    fulfillStatus: string;
+    fulfillType?: "card" | "account" | "manual";
+    deliverSecret?: string | null;
+    fulfillError?: string | null;
+    createdAt?: string;
+  };
+
   function payLabel(s: string) {
     if (s === "paid") return "已付款";
     if (s === "failed") return "失败";
@@ -99,30 +235,29 @@ const orderNo = Astro.url.searchParams.get("orderNo") || "";
       .replaceAll('"', "&quot;");
   }
 
-  function renderOrderCard(o: {
-    orderNo: string;
-    productName: string;
-    email: string;
-    amountUsdt: number;
-    amountCny: number;
-    paymentStatus: string;
-    fulfillStatus: string;
-    fulfillType?: string;
-    deliverSecret?: string | null;
-    fulfillError?: string | null;
-    createdAt?: string;
-  }) {
+  function renderOrderCard(o: OrderItem) {
     const isAccount = o.fulfillType === "account";
-    const secretLabel = isAccount ? "账号资料" : "卡密 / 充值内容";
+    const isManual = o.fulfillType === "manual";
+    const secretLabel = isAccount
+      ? "成品账号资料"
+      : isManual
+        ? "人工代充凭据"
+        : "卡密 / 充值内容";
     const secretHint = isAccount
       ? "请妥善保存成品账号资料；登录后注意 IP 稳定性。"
-      : "请按发货说明，使用卡密充到你自己的账号。";
+      : isManual
+        ? "本商品为人工代充，请携带订单号联系客服（support@magfieldai.top）协助完成自有账号代充。"
+        : "请按发货说明，使用卡密充到你自己的账号。";
     const secret = o.deliverSecret
       ? `<div class="secret"><div class="muted">${secretLabel}</div><pre data-testid="deliver-secret">${escapeHtml(String(o.deliverSecret))}</pre><p class="muted">${secretHint}</p></div>`
       : "";
     const err = o.fulfillError
       ? `<p class="error">履约提示：${escapeHtml(String(o.fulfillError))}</p>`
       : "";
+    const openLink =
+      o.paymentStatus === "pending" || o.paymentStatus === "confirming"
+        ? `<div class="order-actions"><a class="btn btn-primary btn-sm" href="/pay/${encodeURIComponent(o.orderNo)}">继续付款 / 查看支付页</a></div>`
+        : "";
     return `
       <article class="order-card" data-testid="order-card">
         <div class="info"><span>订单号</span><code>${escapeHtml(o.orderNo)}</code></div>
@@ -131,51 +266,219 @@ const orderNo = Astro.url.searchParams.get("orderNo") || "";
         <div class="info"><span>发货</span><strong data-testid="result-fulfill">${fulfillLabel(o.fulfillStatus)}</strong></div>
         <div class="info"><span>应付</span><strong>${o.amountUsdt} USDT / ¥${o.amountCny}</strong></div>
         ${o.createdAt ? `<div class="info"><span>下单</span><strong>${escapeHtml(o.createdAt)}</strong></div>` : ""}
-        ${secret}${err}
+        ${secret}${err}${openLink}
       </article>
     `;
   }
 
-  const listForm = document.getElementById("list-form") as HTMLFormElement | null;
-  const listError = document.getElementById("list-error");
-  const listResult = document.getElementById("list-result");
+  const root = document.querySelector<HTMLElement>("[data-testid='orders-page']");
+  const signedPanel = document.getElementById("orders-signed-panel");
+  const loginPanel = document.getElementById("orders-login-panel");
+  const userEmailEl = document.getElementById("orders-user-email");
+  const myOrdersList = document.getElementById("my-orders-list");
+  const refreshOrdersBtn = document.getElementById("refresh-orders-btn");
+  const ordersLogoutBtn = document.getElementById("orders-logout-btn");
 
-  listForm?.addEventListener("submit", async (e) => {
-    e.preventDefault();
-    if (!listForm || !listError || !listResult) return;
-    listError.hidden = true;
-    listResult.hidden = true;
-    const email = (listForm.elements.namedItem("email") as HTMLInputElement).value.trim();
-    const queryPassword = (
-      listForm.elements.namedItem("queryPassword") as HTMLInputElement
-    ).value.trim();
-    const btn = listForm.querySelector("button[type=submit]") as HTMLButtonElement;
-    btn.disabled = true;
-    btn.textContent = "查询中…";
+  const otpLoginForm = document.getElementById("otp-login-form") as HTMLFormElement | null;
+  const emailInput = document.getElementById("orders-email-input") as HTMLInputElement | null;
+  const captchaInput = document.getElementById("orders-captcha-input") as HTMLInputElement | null;
+  const captchaImg = document.getElementById("orders-captcha-img") as HTMLImageElement | null;
+  const captchaRefreshBtn = document.getElementById("orders-captcha-refresh");
+  const otpInput = document.getElementById("orders-otp-input") as HTMLInputElement | null;
+  const sendOtpBtn = document.getElementById("orders-send-otp-btn") as HTMLButtonElement | null;
+  const otpStatusEl = document.getElementById("orders-otp-status");
+  const listError = document.getElementById("list-error");
+
+  let captchaId = "";
+
+  async function loadCaptcha() {
+    if (!captchaImg) return;
     try {
-      const res = await fetch("/api/orders/query", {
+      const res = await fetch("/api/auth/captcha", { cache: "no-store" });
+      if (!res.ok) return;
+      const data = await res.json();
+      captchaId = data.captchaId || "";
+      if (data.svgDataUrl) captchaImg.src = data.svgDataUrl;
+      if (captchaInput) captchaInput.value = "";
+    } catch {
+      /* ignore */
+    }
+  }
+
+  captchaRefreshBtn?.addEventListener("click", () => {
+    void loadCaptcha();
+  });
+
+  function renderOrders(orders: OrderItem[]) {
+    if (!myOrdersList) return;
+    if (orders.length === 0) {
+      myOrdersList.innerHTML = `<p class="empty-orders">该邮箱名下暂无订单，<a href="/#subscribe">去选购订阅方案 →</a></p>`;
+      return;
+    }
+    myOrdersList.innerHTML = orders.map(renderOrderCard).join("");
+  }
+
+  async function loadMyOrders() {
+    if (!myOrdersList) return;
+    const res = await fetch("/api/orders/mine");
+    if (res.status === 401) {
+      if (signedPanel) signedPanel.hidden = true;
+      if (loginPanel) loginPanel.hidden = false;
+      return;
+    }
+    const data = await res.json();
+    if (res.ok) {
+      if (userEmailEl && data.user?.email) userEmailEl.textContent = data.user.email;
+      if (signedPanel) signedPanel.hidden = false;
+      if (loginPanel) loginPanel.hidden = true;
+      renderOrders(Array.isArray(data.orders) ? data.orders : []);
+    }
+  }
+
+  if (root?.dataset.userEmail) {
+    try {
+      const initial = JSON.parse(root.dataset.initialOrders || "[]") as OrderItem[];
+      renderOrders(initial);
+    } catch {
+      void loadMyOrders();
+    }
+  } else {
+    void loadCaptcha();
+  }
+
+  refreshOrdersBtn?.addEventListener("click", () => {
+    void loadMyOrders();
+  });
+
+  ordersLogoutBtn?.addEventListener("click", async () => {
+    try {
+      await fetch("/api/auth/logout", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ email, queryPassword }),
+        body: "{}",
+      });
+    } catch {
+      /* ignore */
+    }
+    if (signedPanel) signedPanel.hidden = true;
+    if (loginPanel) loginPanel.hidden = false;
+    void loadCaptcha();
+    window.dispatchEvent(new CustomEvent("mf:auth-changed", { detail: { email: null } }));
+  });
+
+  let cooldownTimer: ReturnType<typeof setInterval> | null = null;
+  let cooldownLeft = 0;
+
+  function startCooldown(sec: number) {
+    if (cooldownTimer) clearInterval(cooldownTimer);
+    cooldownLeft = sec;
+    const tick = () => {
+      if (!sendOtpBtn) return;
+      if (cooldownLeft <= 0) {
+        if (cooldownTimer) clearInterval(cooldownTimer);
+        cooldownTimer = null;
+        sendOtpBtn.disabled = false;
+        sendOtpBtn.textContent = "重新获取";
+        return;
+      }
+      sendOtpBtn.disabled = true;
+      sendOtpBtn.textContent = `${cooldownLeft}s`;
+      cooldownLeft -= 1;
+    };
+    tick();
+    cooldownTimer = setInterval(tick, 1000);
+  }
+
+  sendOtpBtn?.addEventListener("click", async () => {
+    if (!emailInput || !sendOtpBtn || !listError) return;
+    listError.hidden = true;
+    const email = emailInput.value.trim();
+    const captchaCode = captchaInput?.value.trim() || "";
+    if (!email || !emailInput.checkValidity()) {
+      listError.textContent = "请先输入有效的邮箱地址";
+      listError.hidden = false;
+      emailInput.focus();
+      return;
+    }
+    if (!captchaId || !/^[A-Za-z0-9]{4}$/.test(captchaCode)) {
+      listError.textContent = "请先输入 4 位图形验证码";
+      listError.hidden = false;
+      if (!captchaId) void loadCaptcha();
+      captchaInput?.focus();
+      return;
+    }
+    sendOtpBtn.disabled = true;
+    sendOtpBtn.textContent = "发送中…";
+    try {
+      const res = await fetch("/api/auth/send-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, captchaId, captchaCode }),
+      });
+      const data = await res.json();
+      void loadCaptcha();
+      if (!res.ok) {
+        listError.textContent = data.error || "发送失败";
+        listError.hidden = false;
+        sendOtpBtn.disabled = false;
+        sendOtpBtn.textContent = "获取验证码";
+        if (data.code === "CAPTCHA_INVALID") captchaInput?.focus();
+        return;
+      }
+      if (otpStatusEl) {
+        otpStatusEl.hidden = false;
+        if (data.delivery === "dev" && data.devCode) {
+          otpStatusEl.textContent = `本地开发模式（未配置发信 Key）：验证码为 ${data.devCode}`;
+        } else {
+          otpStatusEl.textContent = `验证码已发送至 ${email}，${data.ttlMinutes || 10} 分钟内有效`;
+        }
+      }
+      startCooldown(data.cooldownSec || 60);
+      otpInput?.focus();
+    } catch {
+      listError.textContent = "网络异常";
+      listError.hidden = false;
+      void loadCaptcha();
+      sendOtpBtn.disabled = false;
+      sendOtpBtn.textContent = "获取验证码";
+    }
+  });
+
+  otpLoginForm?.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    if (!otpLoginForm || !listError || !emailInput || !otpInput) return;
+    listError.hidden = true;
+    const email = emailInput.value.trim();
+    const code = otpInput.value.trim();
+    const btn = otpLoginForm.querySelector("button[type=submit]") as HTMLButtonElement;
+    btn.disabled = true;
+    btn.textContent = "验证中…";
+    try {
+      const res = await fetch("/api/auth/verify-otp", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, code }),
       });
       const data = await res.json();
       if (!res.ok) {
-        listError.textContent = data.error || "查询失败";
+        listError.textContent = data.error || "验证失败";
         listError.hidden = false;
         return;
       }
-      const orders = Array.isArray(data.orders) ? data.orders : [];
-      listResult.innerHTML = orders.map(renderOrderCard).join("");
-      listResult.hidden = false;
+      window.dispatchEvent(
+        new CustomEvent("mf:auth-changed", { detail: { email: data.user?.email || email } }),
+      );
+      await loadMyOrders();
     } catch {
       listError.textContent = "网络异常";
       listError.hidden = false;
     } finally {
       btn.disabled = false;
-      btn.textContent = "查询历史";
+      btn.textContent = "验证并查看历史订单";
     }
   });
 
+  // Legacy single-order password fallback
   const singleForm = document.getElementById("single-form") as HTMLFormElement | null;
   const singleError = document.getElementById("single-error");
   const singleResult = document.getElementById("single-result");
@@ -211,7 +514,7 @@ const orderNo = Astro.url.searchParams.get("orderNo") || "";
       singleError.hidden = false;
     } finally {
       btn.disabled = false;
-      btn.textContent = "查询单笔";
+      btn.textContent = "查询旧单";
     }
   });
 </script>
@@ -233,16 +536,51 @@ const orderNo = Astro.url.searchParams.get("orderNo") || "";
     border-radius: 1rem;
     background: var(--surface);
     padding: 1.4rem;
-    max-width: 42rem;
+    max-width: 46rem;
   }
 
-  .panel.secondary {
-    margin-top: 1rem;
+  .panel[hidden] {
+    display: none;
   }
 
   .panel h2 {
     margin: 0 0 1rem;
     font-size: 1.05rem;
+  }
+
+  .signed-head {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    padding-bottom: 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .signed-badge {
+    display: inline-block;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #15803d;
+    background: #f0fdf4;
+    border: 1px solid #bbf7d0;
+    padding: 0.14rem 0.5rem;
+    border-radius: 999px;
+    margin-right: 0.55rem;
+    vertical-align: middle;
+  }
+
+  .signed-email {
+    font-family: var(--font-mono);
+    font-size: 0.92rem;
+    color: var(--foreground);
+    vertical-align: middle;
+  }
+
+  .signed-actions {
+    display: flex;
+    gap: 0.5rem;
   }
 
   form {
@@ -253,47 +591,105 @@ const orderNo = Astro.url.searchParams.get("orderNo") || "";
   label {
     display: grid;
     gap: 0.45rem;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
     color: var(--muted-foreground);
+  }
+
+  .otp-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.6rem;
+  }
+
+  .send-otp-btn {
+    white-space: nowrap;
+    border-radius: 0.75rem;
+    padding: 0 1rem;
+  }
+
+  .captcha-img-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    width: 118px;
+    border: 1px solid var(--border-strong);
+    border-radius: 0.75rem;
+    background: #f8fafc;
+    overflow: hidden;
+    cursor: pointer;
+  }
+
+  .captcha-img-btn:hover {
+    border-color: var(--magnetic);
+  }
+
+  .captcha-img-btn img {
+    display: block;
+    width: 118px;
+    height: 40px;
+    object-fit: cover;
   }
 
   input {
     width: 100%;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     border-radius: 0.75rem;
     background: var(--surface);
     color: var(--foreground);
-    padding: 0.85rem 1rem;
+    padding: 0.8rem 0.95rem;
+    font-size: 0.9rem;
+  }
+
+  .status-hint {
+    margin: 0;
+    padding: 0.6rem 0.85rem;
+    border-radius: 0.7rem;
+    background: var(--magnetic-soft);
+    border: 1px solid var(--magnetic-ring);
+    color: var(--magnetic);
+    font-size: 0.82rem;
   }
 
   .error {
     margin: 0;
     color: #b42318;
-    font-size: 0.9rem;
+    font-size: 0.88rem;
   }
 
   .result-list {
-    margin-top: 1.25rem;
-    padding-top: 1.1rem;
-    border-top: 1px solid var(--border);
+    margin-top: 1.15rem;
     display: grid;
     gap: 1rem;
+  }
+
+  .result-list :global(.empty-orders) {
+    margin: 0;
+    padding: 1.25rem 0 0.25rem;
+    color: var(--muted-foreground);
+    font-size: 0.92rem;
+  }
+
+  .result-list :global(.empty-orders a) {
+    color: var(--magnetic);
+    text-decoration: none;
+    font-weight: 500;
   }
 
   .result-list :global(.order-card) {
     display: grid;
     gap: 0.65rem;
-    padding: 1rem;
+    padding: 1.05rem;
     border-radius: 0.85rem;
     border: 1px solid var(--border);
-    background: color-mix(in srgb, var(--background) 70%, var(--surface));
+    background: var(--background);
   }
 
   .result-list :global(.info) {
     display: flex;
     justify-content: space-between;
     gap: 1rem;
-    font-size: 0.95rem;
+    font-size: 0.92rem;
   }
 
   .result-list :global(.info span),
@@ -303,16 +699,41 @@ const orderNo = Astro.url.searchParams.get("orderNo") || "";
 
   .result-list :global(.secret) {
     margin-top: 0.35rem;
-    padding: 1rem;
-    border-radius: 0.85rem;
-    border: 1px solid color-mix(in srgb, var(--primary) 40%, var(--border));
-    background: color-mix(in srgb, var(--primary) 12%, transparent);
+    padding: 0.95rem;
+    border-radius: 0.8rem;
+    border: 1px solid var(--magnetic-ring);
+    background: var(--magnetic-soft);
   }
 
   .result-list :global(pre) {
-    margin: 0.6rem 0;
+    margin: 0.55rem 0;
     white-space: pre-wrap;
     word-break: break-all;
-    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    font-family: var(--font-mono);
+    font-size: 0.88rem;
+  }
+
+  .result-list :global(.order-actions) {
+    margin-top: 0.35rem;
+  }
+
+  .legacy-box {
+    margin-top: 1.25rem;
+    max-width: 46rem;
+    padding: 1rem 1.25rem;
+    border: 1px dashed var(--border-strong);
+    border-radius: 0.9rem;
+    background: var(--surface);
+  }
+
+  .legacy-box summary {
+    cursor: pointer;
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+  }
+
+  .legacy-box form {
+    margin-top: 1rem;
   }
 </style>

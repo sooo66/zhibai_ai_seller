@@ -1,5 +1,6 @@
 ---
 import PageLayout from "../../layouts/PageLayout.astro";
+import { getSessionUser } from "../../lib/auth";
 import { expireOpenOrders, getOrderByNo, getProductById } from "../../lib/db";
 import { env } from "../../lib/env";
 import { getUsdtConfig, paymentStatusLabel } from "../../lib/payment";
@@ -21,6 +22,10 @@ const payLabel = paymentStatusLabel(order.payment_status);
 const isOpen =
   order.payment_status === "pending" || order.payment_status === "confirming";
 const allowSimulate = env("ALLOW_PAYMENT_SIMULATE") === "1";
+const sessionUser = getSessionUser(Astro.cookies);
+const isOwnerSession =
+  Boolean(sessionUser) &&
+  sessionUser!.email.trim().toLowerCase() === order.email.trim().toLowerCase();
 ---
 
 <PageLayout title={`付款 ${order.order_no} · Magfield`}>
@@ -51,7 +56,7 @@ const allowSimulate = env("ALLOW_PAYMENT_SIMULATE") === "1";
     <div class="panel">
       <div class="row"><span>订单号</span><code data-testid="pay-order-no">{order.order_no}</code></div>
       <div class="row"><span>套餐</span><strong>{order.product_name}</strong></div>
-      <div class="row"><span>查单邮箱</span><strong>{order.email}</strong></div>
+      <div class="row"><span>接收邮箱</span><strong>{order.email}</strong></div>
       <div class="row value-row">
         <span>应付金额</span>
         <div class="value-actions">
@@ -94,6 +99,23 @@ const allowSimulate = env("ALLOW_PAYMENT_SIMULATE") === "1";
       <div class="row"><span>发货状态</span><strong data-testid="fulfill-status">—</strong></div>
     </div>
 
+    {
+      (product?.account_warning || product?.summary || product?.description) ? (
+        <div class="policy-remind" data-testid="pay-policy-remind">
+          <div class="policy-remind-summary">
+            <strong>购前与售后提示：</strong>
+            {product?.account_warning || product?.summary}
+          </div>
+          {product?.description ? (
+            <details class="policy-remind-details">
+              <summary>展开查看完整商品说明与售后政策</summary>
+              <pre class="policy-remind-full">{product.description}</pre>
+            </details>
+          ) : null}
+        </div>
+      ) : null
+    }
+
     <div class="hint">
       金额必须与页面显示的 <code data-testid="pay-usdt-exact">{order.amount_usdt}</code> USDT
       完全一致（含小数），以便自动匹配。请勿多转或少转。
@@ -106,10 +128,12 @@ const allowSimulate = env("ALLOW_PAYMENT_SIMULATE") === "1";
       <p class="deliver-lead" data-testid="deliver-lead"></p>
       <div class="cred-card" data-testid="cred-card">
         <div class="cred-row"><span>订单号</span><code data-testid="cred-order-no">{order.order_no}</code></div>
-        <div class="cred-row"><span>查单邮箱</span><strong data-testid="cred-email">{order.email}</strong></div>
+        <div class="cred-row"><span>接收邮箱</span><strong data-testid="cred-email">{order.email}</strong></div>
         <div class="cred-row">
-          <span>查单密码</span>
-          <strong data-testid="cred-password">（本浏览器会话可见）</strong>
+          <span>归档状态</span>
+          <strong data-testid="cred-password">
+            {isOwnerSession ? "已绑定当前轻账户，随时可在历史订单查看" : "请前往「历史订单」用邮箱验证码查看"}
+          </strong>
         </div>
         <div class="cred-secret">
           <div class="muted" data-testid="secret-label">发货内容</div>
@@ -117,7 +141,7 @@ const allowSimulate = env("ALLOW_PAYMENT_SIMULATE") === "1";
         </div>
       </div>
       <p class="deliver-note" data-testid="deliver-note">
-        刷新后若看不到发货内容，请到「历史订单」用邮箱 + 查单密码找回。
+        请立即复制或截图保存。后续可随时到「历史订单」通过邮箱验证码找回全部订单与发货内容。
       </p>
     </div>
 
@@ -244,22 +268,26 @@ const allowSimulate = env("ALLOW_PAYMENT_SIMULATE") === "1";
     const note = document.querySelector("[data-testid=deliver-note]");
     const secretLabel = document.querySelector("[data-testid=secret-label]");
     const secretEl = document.querySelector("[data-testid=deliver-secret]");
-    const pwdEl = document.querySelector("[data-testid=cred-password]");
-    const qp = getQueryPassword();
-    if (pwdEl) pwdEl.textContent = qp || "（本页会话已丢失，请用历史订单找回）";
     if (lead) {
       lead.textContent =
         fulfillType === "account"
           ? "以下为成品账号资料，请妥善保存。"
-          : "以下为充值卡密，请到充值站充到你自己的账号。";
+          : fulfillType === "manual"
+            ? "订单已支付并生成人工代充记录，请携带订单号联系客服协助完成自有账号代充。"
+            : "以下为充值卡密，请按说明前往充值站充到你自己的账号。";
     }
     if (secretLabel) {
-      secretLabel.textContent = fulfillType === "account" ? "账号资料" : "卡密 / 充值内容";
+      secretLabel.textContent =
+        fulfillType === "account"
+          ? "成品账号资料"
+          : fulfillType === "manual"
+            ? "人工代充凭据"
+            : "卡密 / 充值内容";
     }
     if (secretEl) secretEl.textContent = data.deliverSecret || "";
     if (note) {
       note.textContent =
-        "请立即复制或截图。刷新后若看不到发货内容，请到「历史订单」用邮箱 + 查单密码找回。";
+        "请立即复制或截图。随时可到「历史订单」用当前已验证邮箱找回全部记录。";
     }
   }
 
@@ -296,7 +324,7 @@ const allowSimulate = env("ALLOW_PAYMENT_SIMULATE") === "1";
             if (pollTimer) clearInterval(pollTimer);
           } else if (data.fulfillStatus === "done" && !data.deliverSecret) {
             pollMsg.textContent =
-              "支付与发货已完成。本页缺少查单密码，请到「历史订单」用邮箱+密码查看。";
+              "支付与发货已完成。请到「历史订单」使用下单邮箱收验证码查看发货内容。";
             if (pollTimer) clearInterval(pollTimer);
           } else if (data.fulfillStatus === "error") {
             pollMsg.textContent = data.fulfillError || "发货异常，请联系客服或稍后在历史订单查看。";
@@ -466,13 +494,51 @@ const allowSimulate = env("ALLOW_PAYMENT_SIMULATE") === "1";
     word-break: break-all;
   }
 
-  .hint {
+  .policy-remind {
     margin-top: 1rem;
+    padding: 0.9rem 1.05rem;
+    border-radius: 0.9rem;
+    border: 1px solid var(--amber-border);
+    background: var(--amber-bg);
+    color: var(--amber-text);
+    font-size: 0.86rem;
+    line-height: 1.55;
+  }
+
+  .policy-remind-details {
+    margin-top: 0.6rem;
+    padding-top: 0.55rem;
+    border-top: 1px dashed var(--amber-border);
+  }
+
+  .policy-remind-details summary {
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 0.82rem;
+  }
+
+  .policy-remind-full {
+    margin: 0.6rem 0 0;
+    padding: 0.75rem 0.85rem;
+    border-radius: 0.65rem;
+    background: rgba(255, 255, 255, 0.75);
+    color: var(--foreground);
+    font-family: inherit;
+    font-size: 0.8rem;
+    line-height: 1.6;
+    white-space: pre-wrap;
+    word-break: break-word;
+    max-height: 20rem;
+    overflow-y: auto;
+  }
+
+  .hint {
+    margin-top: 0.85rem;
     padding: 1rem 1.1rem;
     border-radius: 0.9rem;
-    border: 1px solid color-mix(in srgb, var(--primary) 35%, var(--border));
-    background: color-mix(in srgb, var(--primary) 12%, transparent);
-    font-size: 0.92rem;
+    border: 1px solid var(--magnetic-ring);
+    background: var(--magnetic-soft);
+    font-size: 0.9rem;
     line-height: 1.55;
   }
 

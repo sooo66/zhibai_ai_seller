@@ -51,14 +51,22 @@ export async function confirmPaymentAndFulfill(input: {
 
 export function orderPublicView(
   order: Order,
-  opts?: { queryPassword?: string; includeSecret?: boolean },
+  opts?: {
+    sessionEmail?: string | null;
+    queryPassword?: string;
+    includeSecret?: boolean;
+  },
 ) {
   const product = getProductById(order.product_id);
   const fulfillType = product?.fulfill_type || "card";
+  const sessionOk =
+    Boolean(opts?.sessionEmail) &&
+    opts!.sessionEmail!.trim().toLowerCase() === order.email.trim().toLowerCase();
   const passwordOk =
     Boolean(opts?.queryPassword) &&
     verifyQueryPassword(opts!.queryPassword!, order.query_password_hash || "");
-  const includeSecret = Boolean(opts?.includeSecret && passwordOk);
+  const authorized = sessionOk || passwordOk;
+  const includeSecret = Boolean(opts?.includeSecret && authorized);
 
   return {
     orderNo: order.order_no,
@@ -73,6 +81,6 @@ export function orderPublicView(
     expiresAt: order.expires_at,
     fulfillError: order.fulfill_error,
     deliverSecret: includeSecret ? order.deliver_secret : null,
-    secretAuthorized: passwordOk,
+    secretAuthorized: authorized,
   };
 }

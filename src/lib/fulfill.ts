@@ -5,6 +5,7 @@ import {
   markOrderPaid,
 } from "./db";
 import { daituTrade } from "./daitu";
+import { sendOrderFulfilledEmail } from "./mailer";
 
 export async function confirmPaidAndFulfill(orderNo: string) {
   const order = getOrderByNo(orderNo);
@@ -45,12 +46,28 @@ export async function confirmPaidAndFulfill(orderNo: string) {
       tradeNo?: string;
       secret?: string | null;
     };
-    return markOrderFulfillResult(orderNo, {
+    const fallbackSecret =
+      product.fulfill_type === "manual"
+        ? `已生成人工代充订单${data.tradeNo ? `（上游单号：${data.tradeNo}）` : ""}，请携带本订单号联系客服（support@magfieldai.top）协助完成自有账号代充。`
+        : "已下单，请稍后查单或联系客服";
+    const deliverSecret = data.secret || fallbackSecret;
+
+    const updated = markOrderFulfillResult(orderNo, {
       fulfill_status: "done",
       daitu_trade_no: data.tradeNo || null,
-      deliver_secret: data.secret || "已下单，请稍后查单或联系客服",
+      deliver_secret: deliverSecret,
       fulfill_error: null,
     });
+
+    void sendOrderFulfilledEmail({
+      to: fresh.email,
+      orderNo: fresh.order_no,
+      productName: fresh.product_name,
+      deliverSecret,
+      fulfillType: product.fulfill_type || "card",
+    });
+
+    return updated;
   } catch (err) {
     return markOrderFulfillResult(orderNo, {
       fulfill_status: "error",

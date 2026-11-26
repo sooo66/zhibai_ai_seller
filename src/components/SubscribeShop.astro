@@ -1,11 +1,18 @@
 ---
+import { getSessionUser } from "../lib/auth";
 import { listVisibleProducts } from "../lib/db";
-import { getDaituStockByCode } from "../lib/daitu-stock";
+import { getDaituSyncSnapshot } from "../lib/daitu-stock";
 import { groupProductsByFamily } from "../lib/product-families";
+import BrandIcon from "./BrandIcon.astro";
 
 const products = listVisibleProducts();
-const stockByCode = await getDaituStockByCode();
-const families = groupProductsByFamily(products, stockByCode);
+const daituSnap = await getDaituSyncSnapshot();
+const families = groupProductsByFamily(
+  products,
+  daituSnap.stockByCode,
+  daituSnap.descriptionByCode,
+);
+const sessionUser = getSessionUser(Astro.cookies);
 const familiesJson = JSON.stringify(families);
 const firstSelectable =
   families.find((f) => f.plans.some((p) => p.inStock))?.id ?? families[0]?.id ?? "";
@@ -16,6 +23,7 @@ const firstSelectable =
   class="shop"
   data-testid="subscribe-shop"
   data-families={familiesJson}
+  data-user-email={sessionUser?.email || ""}
 >
   {
     families.length === 0 ? (
@@ -23,118 +31,340 @@ const firstSelectable =
         暂无可购会员，请稍后再来。
       </p>
     ) : (
-      <div class="family-grid">
-        {families.map((f) => (
-          <button
-            type="button"
-            class:list={[
-              "family-card",
-              { selected: f.id === firstSelectable, "is-oos": !f.inStock },
-            ]}
-            data-family-id={f.id}
-            data-testid={`family-${f.id}`}
-            aria-pressed={f.id === firstSelectable ? "true" : "false"}
-            aria-label={`${f.vendor} ${f.productLabel}`}
-            disabled={!f.inStock}
-          >
-            <span class="family-icon" aria-hidden="true" data-icon={f.id}>
-              {f.id === "chatgpt" && (
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                  <path d="M22.282 9.821a5.985 5.985 0 0 0-.516-4.91 6.046 6.046 0 0 0-6.51-2.9A6.065 6.065 0 0 0 4.981 4.18a5.985 5.985 0 0 0-3.998 2.908 6.046 6.046 0 0 0 .743 7.097 5.98 5.98 0 0 0 .51 4.911 6.051 6.051 0 0 0 6.515 2.9A5.985 5.985 0 0 0 13.26 24a6.056 6.056 0 0 0 5.774-4.238 5.99 5.99 0 0 0 3.997-2.908 6.056 6.056 0 0 0-.747-7.033zM13.26 22.43a4.476 4.476 0 0 1-2.876-1.04l.141-.081 4.779-2.758a.795.795 0 0 0 .392-.681v-6.737l2.02 1.168a.071.071 0 0 1 .038.052v5.583a4.504 4.504 0 0 1-4.494 4.494zM3.6 18.304a4.47 4.47 0 0 1-.535-3.014l.142.085 4.783 2.759a.771.771 0 0 0 .78 0l5.843-3.369v2.332a.08.08 0 0 1-.033.062L9.74 19.95a4.5 4.5 0 0 1-6.14-1.646zM2.34 7.896a4.485 4.485 0 0 1 2.366-1.973V11.6a.766.766 0 0 0 .388.676l5.815 3.355-2.02 1.168a.076.076 0 0 1-.071 0l-4.83-2.786A4.504 4.504 0 0 1 2.34 7.872zm16.597 3.855-5.833-3.387L15.119 7.2a.076.076 0 0 1 .071 0l4.83 2.791a4.494 4.494 0 0 1-.676 8.105v-5.678a.79.79 0 0 0-.407-.667zm2.01-3.023-.141-.085-4.784-2.782a.776.776 0 0 0-.785 0L9.409 9.23V6.897a.066.066 0 0 1 .028-.061l4.83-2.787a4.5 4.5 0 0 1 6.68 4.66zm-12.64 4.135 2.02-1.163v-2.34l-2.02 1.163v2.34z" />
-                </svg>
-              )}
-              {f.id === "claude" && (
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                  <path d="M4.714 15.956 12 3.6l7.286 12.356H4.714Zm1.97-.98h10.632L12 6.57 6.684 14.976Zm-2.84 2.348h15.312v1.676H3.844v-1.676Z" />
-                </svg>
-              )}
-              {f.id === "grok" && (
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                  <path d="M6.2 3.5h3.1L18.4 20.5h-3.2L6.2 3.5Zm8.5 0h3.1L12 12.1l-1.7-3.1L14.7 3.5ZM5.6 20.5 9.2 14l1.7 3.1-3.7 3.4H5.6Z" />
-                </svg>
-              )}
-              {f.id === "gemini" && (
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                  <path d="M12 2.2c.4 3.9 3.9 7.4 7.8 7.8-3.9.4-7.4 3.9-7.8 7.8-.4-3.9-3.9-7.4-7.8-7.8 3.9-.4 7.4-3.9 7.8-7.8Z" />
-                </svg>
-              )}
-              {f.id === "codex" && (
-                <svg viewBox="0 0 24 24" width="22" height="22" fill="currentColor">
-                  <path d="M8.5 4h7l1.5 3H7L8.5 4Zm-2 4h11l-1.2 12H7.7L6.5 8Zm3.2 2.2v7.6h1.6V10.2H9.7Zm3.4 0v7.6h1.6V10.2h-1.6Z" />
-                </svg>
-              )}
-            </span>
-            <span class="family-vendor">{f.vendor}</span>
-            <span class="family-name">{f.productLabel}</span>
-            <span class="family-price">
-              从 <strong>¥{f.fromPrice}</strong> 起
-            </span>
-          </button>
-        ))}
-      </div>
+      <>
+        <div class="section-bar">
+          <span class="section-label">选择订阅服务</span>
+          <span class="section-meta">点击品牌切换规格与购前说明 · 实时同步库存</span>
+        </div>
+
+        <div class="family-grid">
+          {families.map((f) => (
+            <button
+              type="button"
+              class:list={[
+                "family-card",
+                { selected: f.id === firstSelectable, "is-oos": !f.inStock },
+              ]}
+              data-family-id={f.id}
+              data-testid={`family-${f.id}`}
+              aria-pressed={f.id === firstSelectable ? "true" : "false"}
+              aria-label={`${f.vendor} ${f.productLabel}${!f.inStock ? "（已售罄）" : ""}`}
+            >
+              <div class="family-card-top">
+                <BrandIcon id={f.id} size={22} />
+                {!f.inStock ? (
+                  <span class="oos-badge">已售罄</span>
+                ) : (
+                  <span class="select-dot" aria-hidden="true">
+                    <svg viewBox="0 0 12 12" width="10" height="10" fill="none">
+                      <path
+                        d="M2.5 6.2 5 8.6 9.5 3.6"
+                        stroke="currentColor"
+                        stroke-width="1.8"
+                        stroke-linecap="round"
+                        stroke-linejoin="round"
+                      />
+                    </svg>
+                  </span>
+                )}
+              </div>
+              <div class="family-card-bottom">
+                <span class="family-vendor">{f.vendor}</span>
+                <span class="family-name">{f.productLabel}</span>
+                <span class="family-price tabular">
+                  ¥{f.fromPrice} 起
+                </span>
+              </div>
+            </button>
+          ))}
+        </div>
+
+        <!-- Integrated Equal-Height Plan Details, Pre-purchase Notice & Checkout Panel -->
+        <aside
+          class="workbench"
+          data-testid="checkout-bar"
+          data-visible="true"
+        >
+          <div class="workbench-left">
+            <div class="workbench-left-top">
+              <div class="plan-header">
+                <div class="plan-heading-row">
+                  <h2 class="checkout-title tabular" data-testid="checkout-title">—</h2>
+                  <span class="type-badge" data-testid="plan-type-badge">卡密直充</span>
+                </div>
+                <p class="checkout-hint" data-testid="checkout-hint">
+                  付款后发放卡密 · 自助充到你自己的账号
+                </p>
+              </div>
+
+              <div class="plan-selector">
+                <span class="sub-label">套餐规格</span>
+                <div class="plan-pills" data-testid="plan-pills" role="group" aria-label="选择套餐"></div>
+              </div>
+            </div>
+
+            <div class="notice-card" data-testid="pre-purchase-notice">
+              <div class="notice-head">
+                <span class="notice-title">购前须知与质保边界</span>
+                <button
+                  type="button"
+                  class="policy-link"
+                  id="open-policy-btn"
+                  data-testid="open-policy-btn"
+                >
+                  查看完整售后政策 →
+                </button>
+              </div>
+
+              <dl class="notice-grid">
+                <div class="notice-row">
+                  <dt>交付方式</dt>
+                  <dd data-testid="notice-delivery">—</dd>
+                </div>
+                <div class="notice-row">
+                  <dt>账号要求</dt>
+                  <dd data-testid="notice-requirement">—</dd>
+                </div>
+                <div class="notice-row">
+                  <dt>质保范围</dt>
+                  <dd data-testid="notice-warranty">—</dd>
+                </div>
+              </dl>
+
+              <p class="account-warning" data-testid="account-warning" hidden></p>
+
+              <button
+                type="button"
+                class="policy-red-alert"
+                id="notice-red-policy-btn"
+                data-testid="policy-red-alert"
+              >
+                下单前请详细阅读完整售后政策
+              </button>
+            </div>
+          </div>
+
+          <div class="workbench-right">
+            <div class="checkout-card">
+              <div class="checkout-card-head">
+                <span class="sub-label">订单结算</span>
+                <span class="pay-method-tag">USDT · TRC-20</span>
+              </div>
+
+              <div class="order-summary-strip">
+                <span class="summary-plan" data-testid="summary-plan-name">—</span>
+                <strong class="summary-price tabular" data-testid="summary-plan-price">—</strong>
+              </div>
+
+              <form class="checkout-form" id="checkout-form" data-testid="checkout-form">
+                <div class="checkout-fields">
+                  <!-- Verified cached-session state -->
+                  <div
+                    class="verified-account-box"
+                    id="auth-signed-box"
+                    data-testid="verified-account-box"
+                    hidden={!sessionUser}
+                  >
+                    <div class="verified-top">
+                      <span class="verified-badge">
+                        <span class="verified-dot" aria-hidden="true"></span>
+                        邮箱已验证 · 自动保持登录
+                      </span>
+                      <button
+                        type="button"
+                        class="switch-account-btn"
+                        id="switch-account-btn"
+                        data-testid="switch-account-btn"
+                      >
+                        切换邮箱
+                      </button>
+                    </div>
+                    <div class="verified-email" id="verified-email-text" data-testid="verified-email">
+                      {sessionUser?.email || ""}
+                    </div>
+                    <p class="verified-desc">
+                      订单与卡密将自动归档至该邮箱的「历史订单」，当前设备 90 天内无需重复验证。
+                    </p>
+                  </div>
+
+                  <!-- Unverified OTP verification state -->
+                  <div
+                    class="otp-auth-box"
+                    id="auth-otp-box"
+                    data-testid="otp-auth-box"
+                    hidden={Boolean(sessionUser)}
+                  >
+                    <div class="field">
+                      <div class="field-label-row">
+                        <label for="checkout-email">验证邮箱</label>
+                        <span class="field-hint">用于接收发货备份与历史查单</span>
+                      </div>
+                      <input
+                        id="checkout-email"
+                        type="email"
+                        name="email"
+                        placeholder="you@example.com"
+                        autocomplete="email"
+                        data-testid="checkout-email"
+                      />
+                    </div>
+
+                    <div class="field">
+                      <div class="field-label-row">
+                        <label for="checkout-captcha">人机验证</label>
+                        <span class="field-hint">点击图片可换一张</span>
+                      </div>
+                      <div class="captcha-row">
+                        <input
+                          id="checkout-captcha"
+                          type="text"
+                          name="captchaCode"
+                          maxlength="4"
+                          placeholder="输入右侧 4 位字符"
+                          autocomplete="off"
+                          spellcheck="false"
+                          data-testid="checkout-captcha"
+                        />
+                        <button
+                          type="button"
+                          class="captcha-img-btn"
+                          id="checkout-captcha-refresh"
+                          title="点击刷新图形验证码"
+                          aria-label="刷新图形验证码"
+                          data-testid="checkout-captcha-refresh"
+                        >
+                          <img
+                            id="checkout-captcha-img"
+                            alt="图形验证码"
+                            width="118"
+                            height="40"
+                          />
+                        </button>
+                      </div>
+                    </div>
+
+                    <div class="field">
+                      <div class="field-label-row">
+                        <label for="checkout-otp">邮箱验证码</label>
+                        <span class="field-hint">验证一次，90 天免重验</span>
+                      </div>
+                      <div class="email-otp-row">
+                        <input
+                          id="checkout-otp"
+                          type="text"
+                          name="otpCode"
+                          inputmode="numeric"
+                          maxlength="6"
+                          pattern="[0-9]{6}"
+                          placeholder="6 位数字验证码"
+                          autocomplete="one-time-code"
+                          spellcheck="false"
+                          data-testid="checkout-otp"
+                        />
+                        <button
+                          type="button"
+                          class="btn btn-ghost send-otp-btn tabular"
+                          id="send-otp-btn"
+                          data-testid="send-otp-btn"
+                        >
+                          获取验证码
+                        </button>
+                      </div>
+                    </div>
+
+                    <p class="otp-status" id="otp-status" hidden data-testid="otp-status"></p>
+                  </div>
+
+                  <p class="checkout-error" id="checkout-error" hidden data-testid="checkout-error"></p>
+                </div>
+
+                <div class="checkout-actions">
+                  <button
+                    type="submit"
+                    class="btn btn-primary checkout-submit tabular"
+                    data-testid="checkout-submit"
+                  >
+                    继续
+                  </button>
+
+                  <p class="consent-note">
+                    点击继续即代表已阅读并同意左侧该方案的购前须知与售后政策。
+                  </p>
+                </div>
+              </form>
+            </div>
+          </div>
+        </aside>
+
+        <!-- Full Policy Slide-over Modal -->
+        <div
+          class="policy-backdrop"
+          id="policy-modal"
+          hidden
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="policy-modal-title"
+          data-testid="policy-modal"
+        >
+          <div class="policy-sheet">
+            <div class="policy-sheet-head">
+              <div>
+                <p class="policy-kicker">购前说明与售后政策</p>
+                <h3 id="policy-modal-title" data-testid="policy-modal-title">—</h3>
+              </div>
+              <button
+                type="button"
+                class="policy-close"
+                id="close-policy-btn"
+                aria-label="关闭说明"
+              >
+                ✕
+              </button>
+            </div>
+            <div class="policy-sheet-body">
+              <div class="policy-warning-box" id="policy-modal-warning" hidden></div>
+              <div class="policy-section-label" id="policy-modal-official-label" hidden>
+                完整商品说明与售后政策
+              </div>
+              <div class="policy-official-box" id="policy-modal-official" hidden></div>
+              <div class="policy-section-label">平台交易与客服说明</div>
+              <ul class="policy-list" id="policy-modal-list"></ul>
+            </div>
+            <div class="policy-sheet-foot">
+              <button type="button" class="btn btn-primary btn-sm" id="confirm-policy-btn">
+                我已了解
+              </button>
+            </div>
+          </div>
+        </div>
+      </>
     )
   }
 </section>
 
-<aside
-  class="checkout-bar"
-  data-testid="checkout-bar"
-  data-visible={families.length > 0 ? "true" : "false"}
-  hidden={families.length === 0}
->
-  <div class="checkout-inner">
-    <div class="checkout-info">
-      <p class="checkout-title" data-testid="checkout-title">—</p>
-      <p class="checkout-hint" data-testid="checkout-hint">
-        填写查单邮箱与密码 · 付款后本页取货 · 支持 USDT
-      </p>
-      <p class="account-warning" data-testid="account-warning" hidden></p>
-      <div class="plan-pills" data-testid="plan-pills" role="group" aria-label="选择套餐"></div>
-    </div>
-    <form class="checkout-form" id="checkout-form" data-testid="checkout-form">
-      <label class="sr-only" for="checkout-email">查单邮箱</label>
-      <input
-        id="checkout-email"
-        type="email"
-        name="email"
-        required
-        placeholder="查单邮箱"
-        autocomplete="email"
-        data-testid="checkout-email"
-      />
-      <label class="sr-only" for="checkout-password">查单密码</label>
-      <input
-        id="checkout-password"
-        type="text"
-        name="queryPassword"
-        required
-        minlength="6"
-        maxlength="12"
-        pattern="[A-Za-z0-9]{6,12}"
-        placeholder="查单密码 6～12 位"
-        autocomplete="off"
-        spellcheck="false"
-        data-testid="checkout-password"
-      />
-      <p class="checkout-error" id="checkout-error" hidden data-testid="checkout-error"></p>
-      <button type="submit" class="btn btn-primary checkout-submit" data-testid="checkout-submit">
-        继续
-      </button>
-    </form>
-  </div>
-</aside>
-
 <script>
+  type PlanNotice = {
+    delivery: string;
+    requirement: string;
+    warranty: string;
+    warning: string;
+    officialPolicyText: string;
+    policyBullets: string[];
+  };
+
   type FamilyPlan = {
     id: number;
     slug: string;
     name: string;
+    summary: string;
+    description: string;
     priceCny: number;
     planLabel: string;
     periodHint: string;
-    fulfillType: "card" | "account";
+    fulfillType: "card" | "account" | "manual";
     channelTag: string;
     accountWarning: string;
+    notice: PlanNotice;
     inStock: boolean;
   };
 
@@ -152,24 +382,79 @@ const firstSelectable =
   if (!shop || !bar) throw new Error("subscribe shop missing");
 
   const families = JSON.parse(shop.dataset.families || "[]") as ProductFamily[];
-  if (families.length === 0) {
-    /* empty catalog */
-  } else {
+  if (families.length > 0) {
     const first =
       families.find((f) => f.plans.some((p) => p.inStock)) ?? families[0];
     let selectedFamilyId = first.id;
     let selectedProductId =
       first.plans.find((p) => p.inStock)?.id ?? first.plans[0]?.id ?? 0;
+    let signedInEmail: string | null = shop.dataset.userEmail?.trim() || null;
 
     const titleEl = bar.querySelector<HTMLElement>("[data-testid='checkout-title']");
+    const typeBadgeEl = bar.querySelector<HTMLElement>("[data-testid='plan-type-badge']");
     const hintEl = bar.querySelector<HTMLElement>("[data-testid='checkout-hint']");
+    const summaryNameEl = bar.querySelector<HTMLElement>("[data-testid='summary-plan-name']");
+    const summaryPriceEl = bar.querySelector<HTMLElement>("[data-testid='summary-plan-price']");
+    const deliveryEl = bar.querySelector<HTMLElement>("[data-testid='notice-delivery']");
+    const reqEl = bar.querySelector<HTMLElement>("[data-testid='notice-requirement']");
+    const warrantyEl = bar.querySelector<HTMLElement>("[data-testid='notice-warranty']");
     const warnEl = bar.querySelector<HTMLElement>("[data-testid='account-warning']");
     const pillsEl = bar.querySelector<HTMLElement>("[data-testid='plan-pills']");
     const form = bar.querySelector<HTMLFormElement>("#checkout-form");
     const errorEl = bar.querySelector<HTMLElement>("#checkout-error");
+    const submitBtn = form?.querySelector<HTMLButtonElement>("button[type=submit]");
+
+    // Auth controls
+    const signedBox = document.getElementById("auth-signed-box");
+    const verifiedEmailText = document.getElementById("verified-email-text");
+    const switchAccountBtn = document.getElementById("switch-account-btn");
+    const otpBox = document.getElementById("auth-otp-box");
+    const emailInput = document.getElementById("checkout-email") as HTMLInputElement | null;
+    const captchaInput = document.getElementById("checkout-captcha") as HTMLInputElement | null;
+    const captchaImg = document.getElementById("checkout-captcha-img") as HTMLImageElement | null;
+    const captchaRefreshBtn = document.getElementById("checkout-captcha-refresh");
+    const otpInput = document.getElementById("checkout-otp") as HTMLInputElement | null;
+    const sendOtpBtn = document.getElementById("send-otp-btn") as HTMLButtonElement | null;
+    const otpStatusEl = document.getElementById("otp-status");
+
+    let captchaId = "";
+
+    async function loadCaptcha() {
+      if (!captchaImg) return;
+      try {
+        const res = await fetch("/api/auth/captcha", { cache: "no-store" });
+        if (!res.ok) return;
+        const data = await res.json();
+        captchaId = data.captchaId || "";
+        if (data.svgDataUrl) captchaImg.src = data.svgDataUrl;
+        if (captchaInput) captchaInput.value = "";
+      } catch {
+        /* ignore */
+      }
+    }
+
+    captchaRefreshBtn?.addEventListener("click", () => {
+      void loadCaptcha();
+    });
+
     const cards = Array.from(
       shop.querySelectorAll<HTMLButtonElement>("[data-family-id]"),
     );
+
+    // Policy modal controls
+    const modal = document.getElementById("policy-modal");
+    const modalTitle = document.getElementById("policy-modal-title");
+    const modalWarn = document.getElementById("policy-modal-warning");
+    const modalOfficialLabel = document.getElementById("policy-modal-official-label");
+    const modalOfficial = document.getElementById("policy-modal-official");
+    const modalList = document.getElementById("policy-modal-list");
+    const openPolicyBtn = document.getElementById("open-policy-btn");
+    const noticeRedPolicyBtn = document.getElementById("notice-red-policy-btn");
+    const closePolicyBtn = document.getElementById("close-policy-btn");
+    const confirmPolicyBtn = document.getElementById("confirm-policy-btn");
+
+    let cooldownTimer: ReturnType<typeof setInterval> | null = null;
+    let cooldownLeft = 0;
 
     function currentFamily() {
       return families.find((f) => f.id === selectedFamilyId) ?? families[0];
@@ -180,24 +465,188 @@ const firstSelectable =
       return family.plans.find((p) => p.id === selectedProductId) ?? family.plans[0];
     }
 
+    function updateSubmitButton() {
+      const plan = currentPlan();
+      if (!submitBtn || !plan) return;
+      submitBtn.disabled = !plan.inStock;
+      if (!plan.inStock) {
+        submitBtn.textContent = "当前规格已售罄";
+      } else if (signedInEmail) {
+        submitBtn.textContent = `继续前往支付 · ¥${plan.priceCny}`;
+      } else {
+        submitBtn.textContent = `验证邮箱并前往支付 · ¥${plan.priceCny}`;
+      }
+    }
+
+    function renderAuthState() {
+      if (signedBox && otpBox) {
+        signedBox.hidden = !signedInEmail;
+        otpBox.hidden = Boolean(signedInEmail);
+      }
+      if (verifiedEmailText) {
+        verifiedEmailText.textContent = signedInEmail || "";
+      }
+      if (!signedInEmail && !captchaId) {
+        void loadCaptcha();
+      }
+      updateSubmitButton();
+    }
+
+    window.addEventListener("mf:auth-changed", (e) => {
+      const detail = (e as CustomEvent<{ email?: string | null }>).detail;
+      signedInEmail = detail?.email ?? null;
+      renderAuthState();
+    });
+
+    function startCooldown(sec: number) {
+      if (cooldownTimer) clearInterval(cooldownTimer);
+      cooldownLeft = sec;
+      const tick = () => {
+        if (!sendOtpBtn) return;
+        if (cooldownLeft <= 0) {
+          if (cooldownTimer) clearInterval(cooldownTimer);
+          cooldownTimer = null;
+          sendOtpBtn.disabled = false;
+          sendOtpBtn.textContent = "重新获取";
+          return;
+        }
+        sendOtpBtn.disabled = true;
+        sendOtpBtn.textContent = `${cooldownLeft}s`;
+        cooldownLeft -= 1;
+      };
+      tick();
+      cooldownTimer = setInterval(tick, 1000);
+    }
+
+    sendOtpBtn?.addEventListener("click", async () => {
+      if (!emailInput || !sendOtpBtn) return;
+      if (errorEl) errorEl.hidden = true;
+      const email = emailInput.value.trim();
+      const captchaCode = captchaInput?.value.trim() || "";
+      if (!email || !emailInput.checkValidity()) {
+        if (errorEl) {
+          errorEl.textContent = "请先输入有效的邮箱地址";
+          errorEl.hidden = false;
+        }
+        emailInput.focus();
+        return;
+      }
+      if (!captchaId || !/^[A-Za-z0-9]{4}$/.test(captchaCode)) {
+        if (errorEl) {
+          errorEl.textContent = "请先输入 4 位图形验证码";
+          errorEl.hidden = false;
+        }
+        if (!captchaId) void loadCaptcha();
+        captchaInput?.focus();
+        return;
+      }
+      sendOtpBtn.disabled = true;
+      sendOtpBtn.textContent = "发送中…";
+      try {
+        const res = await fetch("/api/auth/send-otp", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email, captchaId, captchaCode }),
+        });
+        const data = await res.json();
+        // Captcha is single-use: always rotate after an attempt
+        void loadCaptcha();
+        if (!res.ok) {
+          if (errorEl) {
+            errorEl.textContent = data.error || "验证码发送失败";
+            errorEl.hidden = false;
+          }
+          sendOtpBtn.disabled = false;
+          sendOtpBtn.textContent = "获取验证码";
+          if (data.code === "CAPTCHA_INVALID") captchaInput?.focus();
+          return;
+        }
+        if (otpStatusEl) {
+          otpStatusEl.hidden = false;
+          if (data.delivery === "dev" && data.devCode) {
+            otpStatusEl.textContent = `本地开发模式（未配置发信 Key）：验证码为 ${data.devCode}`;
+          } else {
+            otpStatusEl.textContent = `验证码已发送至 ${email}，${data.ttlMinutes || 10} 分钟内有效（若未收到请检查垃圾箱）`;
+          }
+        }
+        startCooldown(data.cooldownSec || 60);
+        otpInput?.focus();
+      } catch {
+        if (errorEl) {
+          errorEl.textContent = "网络异常，请稍后重试";
+          errorEl.hidden = false;
+        }
+        void loadCaptcha();
+        sendOtpBtn.disabled = false;
+        sendOtpBtn.textContent = "获取验证码";
+      }
+    });
+
+    switchAccountBtn?.addEventListener("click", async () => {
+      try {
+        await fetch("/api/auth/logout", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: "{}",
+        });
+      } catch {
+        /* ignore */
+      }
+      signedInEmail = null;
+      if (otpInput) otpInput.value = "";
+      if (otpStatusEl) {
+        otpStatusEl.hidden = true;
+        otpStatusEl.textContent = "";
+      }
+      if (errorEl) errorEl.hidden = true;
+      renderAuthState();
+      window.dispatchEvent(new CustomEvent("mf:auth-changed", { detail: { email: null } }));
+      emailInput?.focus();
+    });
+
     function renderCheckout() {
       const family = currentFamily();
       const plan = currentPlan();
       if (!titleEl || !pillsEl || !plan) return;
 
-      titleEl.textContent = `${family.productLabel} ${plan.planLabel} · ¥${plan.priceCny}${plan.periodHint ? " " + plan.periodHint : ""}`;
+      const planDisplay = `${family.productLabel} ${plan.planLabel}`;
+      const priceDisplay = `¥${plan.priceCny}${plan.periodHint ? " " + plan.periodHint : ""}`;
+      titleEl.textContent = `${planDisplay} · ${priceDisplay}`;
+      if (summaryNameEl) summaryNameEl.textContent = planDisplay;
+      if (summaryPriceEl) summaryPriceEl.textContent = priceDisplay;
 
-      if (hintEl) {
-        hintEl.textContent =
-          plan.fulfillType === "account"
-            ? "付款后发放成品账号资料 · 用查单密码在本页或历史订单取货"
-            : "付款后发放卡密 · 自助充到你自己的账号 · 用查单密码取货";
+      if (typeBadgeEl) {
+        if (!plan.inStock) {
+          typeBadgeEl.textContent = "已售罄";
+          typeBadgeEl.dataset.tone = "oos";
+        } else if (plan.fulfillType === "account") {
+          typeBadgeEl.textContent = "成品账号";
+          typeBadgeEl.dataset.tone = "amber";
+        } else if (plan.fulfillType === "manual") {
+          typeBadgeEl.textContent = "人工代充";
+          typeBadgeEl.dataset.tone = "amber";
+        } else if (plan.channelTag) {
+          typeBadgeEl.textContent = plan.channelTag;
+          typeBadgeEl.dataset.tone = "amber";
+        } else {
+          typeBadgeEl.textContent = "原号卡密";
+          typeBadgeEl.dataset.tone = "cobalt";
+        }
       }
 
+      if (hintEl) {
+        hintEl.textContent = plan.summary || plan.notice.delivery;
+      }
+
+      if (deliveryEl) deliveryEl.textContent = plan.notice.delivery;
+      if (reqEl) reqEl.textContent = plan.notice.requirement;
+      if (warrantyEl) warrantyEl.textContent = plan.notice.warranty;
+
       if (warnEl) {
-        if (plan.accountWarning) {
+        const w = plan.notice.warning || plan.accountWarning;
+        if (w) {
           warnEl.hidden = false;
-          warnEl.textContent = plan.accountWarning;
+          warnEl.textContent = w;
         } else {
           warnEl.hidden = true;
           warnEl.textContent = "";
@@ -209,29 +658,73 @@ const firstSelectable =
         const btn = document.createElement("button");
         btn.type = "button";
         btn.className =
-          "plan-pill" +
+          "plan-pill tabular" +
           (p.id === plan.id ? " active" : "") +
           (p.inStock ? "" : " is-oos");
-        btn.textContent = p.planLabel;
+        btn.textContent = p.inStock
+          ? `${p.planLabel} · ¥${p.priceCny}`
+          : `${p.planLabel} · 已售罄`;
         btn.dataset.productId = String(p.id);
         btn.dataset.testid = `plan-${p.slug}`;
-        btn.disabled = !p.inStock;
         btn.setAttribute("aria-pressed", p.id === plan.id ? "true" : "false");
         btn.addEventListener("click", () => {
-          if (!p.inStock) return;
           selectedProductId = p.id;
           renderCheckout();
         });
         pillsEl.appendChild(btn);
       }
 
-      const submitBtn = form?.querySelector<HTMLButtonElement>("button[type=submit]");
-      if (submitBtn) submitBtn.disabled = !plan.inStock;
+      updateSubmitButton();
     }
+
+    function openPolicyModal() {
+      const plan = currentPlan();
+      if (!modal || !modalTitle || !modalList || !plan) return;
+      modalTitle.textContent = plan.name;
+      if (modalWarn) {
+        const w = plan.notice.warning || plan.accountWarning;
+        if (w) {
+          modalWarn.hidden = false;
+          modalWarn.textContent = w;
+        } else {
+          modalWarn.hidden = true;
+          modalWarn.textContent = "";
+        }
+      }
+      if (modalOfficial) {
+        const hasOfficial = Boolean(plan.notice.officialPolicyText);
+        modalOfficial.hidden = !hasOfficial;
+        if (modalOfficialLabel) modalOfficialLabel.hidden = !hasOfficial;
+        modalOfficial.textContent = hasOfficial ? plan.notice.officialPolicyText : "";
+      }
+      modalList.innerHTML = "";
+      for (const item of plan.notice.policyBullets) {
+        if (!item) continue;
+        const li = document.createElement("li");
+        li.textContent = item;
+        modalList.appendChild(li);
+      }
+      modal.hidden = false;
+    }
+
+    function closePolicyModal() {
+      if (modal) modal.hidden = true;
+    }
+
+    openPolicyBtn?.addEventListener("click", openPolicyModal);
+    noticeRedPolicyBtn?.addEventListener("click", openPolicyModal);
+    closePolicyBtn?.addEventListener("click", closePolicyModal);
+    confirmPolicyBtn?.addEventListener("click", closePolicyModal);
+    modal?.addEventListener("click", (e) => {
+      if (e.target === modal) closePolicyModal();
+    });
+    document.addEventListener("keydown", (e) => {
+      if (e.key === "Escape" && modal && !modal.hidden) closePolicyModal();
+    });
 
     function selectFamily(id: string) {
       const family = families.find((f) => f.id === id);
-      if (!family || !family.inStock) return;
+      if (!family) return;
       selectedFamilyId = id;
       selectedProductId = family.plans.find((p) => p.inStock)?.id ?? family.plans[0]?.id ?? 0;
       for (const card of cards) {
@@ -253,209 +746,349 @@ const firstSelectable =
       e.preventDefault();
       if (!form || !errorEl) return;
       errorEl.hidden = true;
-      const email = (form.elements.namedItem("email") as HTMLInputElement).value.trim();
-      const queryPassword = (
-        form.elements.namedItem("queryPassword") as HTMLInputElement
-      ).value.trim();
       const plan = currentPlan();
       if (!plan || !plan.inStock) {
         errorEl.textContent = "请选择有货套餐";
         errorEl.hidden = false;
         return;
       }
-      if (!/^[A-Za-z0-9]{6,12}$/.test(queryPassword)) {
-        errorEl.textContent = "查单密码需为 6～12 位字母或数字";
-        errorEl.hidden = false;
-        return;
+
+      if (submitBtn) {
+        submitBtn.disabled = true;
       }
-      const btn = form.querySelector<HTMLButtonElement>("button[type=submit]");
-      if (btn) {
-        btn.disabled = true;
-        btn.textContent = "创建中…";
-      }
+
       try {
+        // Step 1: If not signed in yet, verify email + 6-digit OTP first and cache 90-day session
+        if (!signedInEmail) {
+          const email = emailInput?.value.trim() || "";
+          const code = otpInput?.value.trim() || "";
+          if (!email || !emailInput?.checkValidity()) {
+            errorEl.textContent = "请输入有效的邮箱地址";
+            errorEl.hidden = false;
+            emailInput?.focus();
+            return;
+          }
+          if (!/^\d{6}$/.test(code)) {
+            errorEl.textContent = "请先获取并输入 6 位数字验证码";
+            errorEl.hidden = false;
+            otpInput?.focus();
+            return;
+          }
+          if (submitBtn) submitBtn.textContent = "正在验证邮箱…";
+          const verifyRes = await fetch("/api/auth/verify-otp", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ email, code }),
+          });
+          const verifyData = await verifyRes.json();
+          if (!verifyRes.ok) {
+            errorEl.textContent = verifyData.error || "验证码校验失败";
+            errorEl.hidden = false;
+            return;
+          }
+          signedInEmail = verifyData.user?.email || email;
+          renderAuthState();
+          window.dispatchEvent(
+            new CustomEvent("mf:auth-changed", { detail: { email: signedInEmail } }),
+          );
+        }
+
+        // Step 2: Create order under verified session
+        if (submitBtn) submitBtn.textContent = "正在创建订单…";
         const res = await fetch("/api/orders", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ productId: plan.id, email, queryPassword }),
+          body: JSON.stringify({ productId: plan.id }),
         });
         const data = await res.json();
+        if (res.status === 401) {
+          signedInEmail = null;
+          renderAuthState();
+          window.dispatchEvent(new CustomEvent("mf:auth-changed", { detail: { email: null } }));
+          errorEl.textContent = data.error || "登录状态已失效，请重新验证邮箱";
+          errorEl.hidden = false;
+          return;
+        }
         if (!res.ok) {
           errorEl.textContent = data.error || "下单失败";
           errorEl.hidden = false;
           return;
-        }
-        try {
-          sessionStorage.setItem(`mf_qp_${data.orderNo}`, queryPassword);
-        } catch {
-          /* ignore */
         }
         location.href = `/pay/${data.orderNo}`;
       } catch {
         errorEl.textContent = "网络异常，请稍后重试";
         errorEl.hidden = false;
       } finally {
-        if (btn) {
-          btn.disabled = !plan.inStock;
-          btn.textContent = "继续";
-        }
+        updateSubmitButton();
       }
     });
 
+    renderAuthState();
     renderCheckout();
   }
 </script>
 
 <style>
   .shop {
-    max-width: 1100px;
+    max-width: 1120px;
     margin: 0 auto;
-    padding: 0.35rem 1.5rem 11rem;
+    padding: 0.25rem 1.5rem 3.5rem;
+  }
+
+  .section-bar {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.85rem;
+  }
+
+  .section-label {
+    font-size: 0.82rem;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+
+  .section-meta {
+    font-size: 0.78rem;
+    color: var(--muted-foreground);
   }
 
   .empty {
     margin: 0;
     padding: 2rem;
-    border: 1px dashed var(--border);
+    border: 1px dashed var(--border-strong);
     border-radius: 1rem;
     color: var(--muted-foreground);
     background: var(--surface);
   }
 
+  /* 5-column crisp porcelain brand cards (logos always full-color) */
   .family-grid {
     display: grid;
-    grid-template-columns: repeat(4, minmax(0, 1fr));
-    gap: 0.85rem;
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+    gap: 0.75rem;
   }
 
   .family-card {
     display: flex;
     flex-direction: column;
-    align-items: flex-start;
-    gap: 0.2rem;
-    padding: 0.95rem 1rem 1rem;
-    border: 1.5px solid transparent;
-    border-radius: 1rem;
-    background: var(--card);
+    justify-content: space-between;
+    align-items: stretch;
+    min-height: 9.75rem;
+    padding: 1.05rem 1.1rem 1.1rem;
+    border: 1px solid rgba(15, 23, 42, 0.09);
+    border-radius: 1.05rem;
+    background: var(--surface);
     color: inherit;
     text-align: left;
     cursor: pointer;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.03);
     transition:
-      border-color 0.15s ease,
-      background 0.15s ease,
-      box-shadow 0.15s ease,
-      opacity 0.15s ease;
+      border-color 0.18s ease,
+      background 0.18s ease,
+      box-shadow 0.18s ease,
+      transform 0.18s ease;
   }
 
-  .family-card:hover:not(:disabled) {
-    background: #e3e7ed;
+  .family-card:hover:not(:disabled):not(.selected) {
+    border-color: rgba(15, 23, 42, 0.2);
+    box-shadow: 0 6px 18px -12px rgba(15, 23, 42, 0.18);
+    transform: translateY(-1px);
   }
 
   .family-card.selected {
-    border-color: #2a2e33;
-    background: #e4e8ee;
-    box-shadow: 0 0 0 1px rgba(42, 46, 51, 0.08);
+    border-color: var(--magnetic);
+    background: linear-gradient(180deg, #ffffff 0%, #f5f8ff 100%);
+    box-shadow:
+      0 0 0 2.5px rgba(37, 99, 235, 0.12),
+      0 12px 26px -14px rgba(37, 99, 235, 0.28);
   }
 
-  .family-card.is-oos,
+  .family-card.is-oos {
+    opacity: 0.72;
+    background: var(--background);
+  }
+
+  .family-card.is-oos.selected {
+    opacity: 1;
+    border-color: rgba(220, 38, 38, 0.45);
+    background: linear-gradient(180deg, #ffffff 0%, #fef2f2 100%);
+    box-shadow: 0 0 0 2.5px rgba(220, 38, 38, 0.1);
+  }
+
   .family-card:disabled {
-    opacity: 0.42;
+    opacity: 0.48;
     cursor: not-allowed;
-    filter: grayscale(0.55);
   }
 
-  .family-icon {
+  .family-card-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .select-dot {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    width: 2rem;
-    height: 2rem;
-    margin-bottom: 0.35rem;
-    color: var(--foreground);
+    width: 1.15rem;
+    height: 1.15rem;
+    border-radius: 999px;
+    border: 1.5px solid rgba(15, 23, 42, 0.14);
+    background: transparent;
+    color: transparent;
+    transition: background 0.16s ease, border-color 0.16s ease, color 0.16s ease;
+  }
+
+  .family-card.selected .select-dot {
+    border-color: var(--magnetic);
+    background: var(--magnetic);
+    color: #ffffff;
+  }
+
+  .oos-badge {
+    font-size: 0.7rem;
+    font-weight: 600;
+    color: #dc2626;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+    padding: 0.14rem 0.48rem;
+    border-radius: 999px;
+  }
+
+  .family-card-bottom {
+    display: flex;
+    flex-direction: column;
+    gap: 0.15rem;
   }
 
   .family-vendor {
-    font-size: 0.78rem;
+    font-size: 0.74rem;
     color: var(--muted-foreground);
   }
 
   .family-name {
-    font-size: 1.05rem;
-    font-weight: 700;
+    font-size: 1.02rem;
+    font-weight: 600;
     letter-spacing: -0.02em;
+    color: var(--foreground);
   }
 
   .family-price {
-    margin-top: 0.55rem;
+    margin-top: 0.4rem;
     font-size: 0.82rem;
+    font-weight: 500;
     color: var(--muted-foreground);
+    transition: color 0.16s ease;
   }
 
-  .family-price strong {
-    color: var(--foreground);
-    font-weight: 700;
+  .family-card.selected .family-price {
+    color: var(--magnetic);
+    font-weight: 600;
   }
 
-  .checkout-bar {
-    position: fixed;
-    inset-inline: 0;
-    bottom: 0;
-    z-index: 50;
-    padding: 0.55rem 0.85rem calc(0.55rem + env(safe-area-inset-bottom));
-    background: color-mix(in srgb, var(--surface) 96%, transparent);
-    border-top: 1px solid var(--border);
-    backdrop-filter: blur(14px);
-    box-shadow: 0 -8px 30px rgba(15, 23, 42, 0.06);
-  }
-
-  .checkout-bar[hidden] {
-    display: none;
-  }
-
-  .checkout-inner {
-    max-width: 1100px;
-    margin: 0 auto;
+  /* Equal-height Integrated Plan Details + Checkout Workbench */
+  .workbench {
+    margin-top: 1.15rem;
+    padding: 1.65rem 1.75rem;
+    border: 1px solid var(--border);
+    border-radius: 1.25rem;
+    background: var(--surface);
+    box-shadow: 0 12px 36px -22px rgba(15, 23, 42, 0.14);
     display: grid;
-    grid-template-columns: minmax(0, 1.2fr) minmax(280px, 1fr);
-    gap: 0.55rem 1rem;
+    grid-template-columns: minmax(0, 1.32fr) minmax(320px, 0.96fr);
+    gap: 1.75rem;
+    align-items: stretch;
+  }
+
+  .workbench-left {
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 1.35rem;
+  }
+
+  .workbench-left-top {
+    display: flex;
+    flex-direction: column;
+    gap: 1.25rem;
+  }
+
+  .plan-heading-row {
+    display: flex;
     align-items: center;
+    flex-wrap: wrap;
+    gap: 0.65rem;
   }
 
   .checkout-title {
     margin: 0;
-    font-size: 0.98rem;
-    font-weight: 700;
-    letter-spacing: -0.02em;
+    font-size: 1.25rem;
+    font-weight: 600;
+    letter-spacing: -0.025em;
+    color: var(--foreground);
+  }
+
+  .type-badge {
+    font-size: 0.72rem;
+    font-weight: 500;
+    padding: 0.2rem 0.6rem;
+    border-radius: 999px;
+    background: var(--magnetic-soft);
+    color: var(--magnetic);
+  }
+
+  .type-badge[data-tone="amber"] {
+    background: var(--amber-bg);
+    color: var(--amber-text);
+    border: 1px solid var(--amber-border);
+  }
+
+  .type-badge[data-tone="oos"] {
+    background: #fef2f2;
+    color: #dc2626;
+    border: 1px solid #fecaca;
   }
 
   .checkout-hint {
-    margin: 0.1rem 0 0.35rem;
-    font-size: 0.72rem;
+    margin: 0.35rem 0 0;
+    font-size: 0.86rem;
     color: var(--muted-foreground);
   }
 
-  .account-warning {
-    margin: 0 0 0.35rem;
-    font-size: 0.72rem;
-    color: #9a3412;
+  .sub-label {
+    display: block;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    margin-bottom: 0.55rem;
   }
 
   .plan-pills {
     display: flex;
     flex-wrap: wrap;
-    gap: 0.35rem;
+    gap: 0.45rem;
   }
 
   :global(.plan-pill) {
-    height: 1.75rem;
-    padding: 0 0.7rem;
+    height: 2.05rem;
+    padding: 0 0.85rem;
     border-radius: 999px;
-    border: 1px solid var(--border);
+    border: 1px solid var(--border-strong);
     background: var(--surface);
     color: var(--foreground);
-    font-size: 0.78rem;
-    font-weight: 600;
+    font-size: 0.8rem;
+    font-weight: 500;
     cursor: pointer;
+    transition:
+      background 0.15s ease,
+      border-color 0.15s ease,
+      color 0.15s ease;
+  }
+
+  :global(.plan-pill:hover:not(:disabled):not(.active)) {
+    background: var(--card);
   }
 
   :global(.plan-pill.active) {
@@ -464,98 +1097,554 @@ const firstSelectable =
     color: var(--primary-foreground);
   }
 
-  :global(.plan-pill.is-oos),
+  :global(.plan-pill.is-oos) {
+    color: var(--muted-foreground);
+    border-style: dashed;
+    background: var(--background);
+  }
+
+  :global(.plan-pill.is-oos.active) {
+    background: #fef2f2;
+    border-style: solid;
+    border-color: #fca5a5;
+    color: #b91c1c;
+  }
+
   :global(.plan-pill:disabled) {
-    opacity: 0.4;
+    opacity: 0.38;
     cursor: not-allowed;
-    filter: grayscale(0.5);
+    text-decoration: line-through;
+  }
+
+  /* Pre-Purchase Structured Notice Box */
+  .notice-card {
+    margin-top: auto;
+    padding: 1.05rem 1.15rem;
+    border-radius: 0.95rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+  }
+
+  .notice-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding-bottom: 0.7rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .notice-title {
+    font-size: 0.82rem;
+    font-weight: 600;
+    color: var(--foreground);
+  }
+
+  .policy-link {
+    background: none;
+    border: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.78rem;
+    font-weight: 500;
+    color: var(--magnetic);
+    cursor: pointer;
+  }
+
+  .policy-link:hover {
+    text-decoration: underline;
+    text-underline-offset: 3px;
+  }
+
+  .notice-grid {
+    margin: 0.75rem 0 0;
+    display: flex;
+    flex-direction: column;
+    gap: 0.55rem;
+  }
+
+  .notice-row {
+    display: grid;
+    grid-template-columns: 4.5rem minmax(0, 1fr);
+    gap: 0.75rem;
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+
+  .notice-row dt {
+    color: var(--muted-foreground);
+    font-weight: 500;
+  }
+
+  .notice-row dd {
+    margin: 0;
+    color: var(--foreground);
+  }
+
+  .account-warning {
+    margin: 0.85rem 0 0;
+    padding: 0.65rem 0.8rem;
+    border-radius: 0.65rem;
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    color: var(--amber-text);
+    font-size: 0.79rem;
+    line-height: 1.5;
+  }
+
+  .policy-red-alert {
+    display: block;
+    width: 100%;
+    margin: 0.85rem 0 0;
+    padding: 0.55rem 0.75rem;
+    border: 1px solid #fecaca;
+    border-radius: 0.6rem;
+    background: #fef2f2;
+    color: #dc2626;
+    font: inherit;
+    font-size: 0.8rem;
+    font-weight: 600;
+    text-align: left;
+    cursor: pointer;
+    transition: background 0.15s ease, border-color 0.15s ease;
+  }
+
+  .policy-red-alert:hover {
+    background: #fee2e2;
+    border-color: #fca5a5;
+  }
+
+  /* Right Column: Stretched Full-Height Checkout Card */
+  .workbench-right {
+    display: flex;
+    flex-direction: column;
+  }
+
+  .checkout-card {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    padding: 1.25rem 1.35rem;
+    border-radius: 1rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+  }
+
+  .checkout-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.85rem;
+  }
+
+  .checkout-card-head .sub-label {
+    margin-bottom: 0;
+  }
+
+  .pay-method-tag {
+    font-family: var(--font-mono);
+    font-size: 0.72rem;
+    font-weight: 500;
+    color: var(--muted-foreground);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 0.18rem 0.55rem;
+    border-radius: 999px;
+  }
+
+  .order-summary-strip {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.75rem;
+    padding: 0.75rem 0.9rem;
+    margin-bottom: 1.1rem;
+    border-radius: 0.7rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+  }
+
+  .summary-plan {
+    font-size: 0.84rem;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+
+  .summary-price {
+    font-size: 0.96rem;
+    font-weight: 600;
+    color: var(--foreground);
+    white-space: nowrap;
   }
 
   .checkout-form {
-    display: grid;
-    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr) auto;
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    justify-content: space-between;
+    gap: 1.25rem;
+  }
+
+  .checkout-fields {
+    display: flex;
+    flex-direction: column;
+    gap: 0.85rem;
+  }
+
+  /* Verified cached session box */
+  .verified-account-box {
+    padding: 0.95rem 1rem;
+    border-radius: 0.8rem;
+    background: var(--surface);
+    border: 1px solid rgba(22, 163, 74, 0.28);
+    display: flex;
+    flex-direction: column;
     gap: 0.45rem;
+  }
+
+  .verified-account-box[hidden],
+  .otp-auth-box[hidden] {
+    display: none;
+  }
+
+  .verified-top {
+    display: flex;
     align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .verified-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    font-size: 0.75rem;
+    font-weight: 600;
+    color: #15803d;
+  }
+
+  .verified-dot {
+    width: 0.45rem;
+    height: 0.45rem;
+    border-radius: 999px;
+    background: #16a34a;
+  }
+
+  .switch-account-btn {
+    border: none;
+    background: none;
+    padding: 0;
+    font: inherit;
+    font-size: 0.75rem;
+    color: var(--magnetic);
+    cursor: pointer;
+  }
+
+  .switch-account-btn:hover {
+    text-decoration: underline;
+  }
+
+  .verified-email {
+    font-family: var(--font-mono);
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: var(--foreground);
+    word-break: break-all;
+  }
+
+  .verified-desc {
+    margin: 0.15rem 0 0;
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: var(--muted-foreground);
+  }
+
+  /* OTP auth fields */
+  .otp-auth-box {
+    display: flex;
+    flex-direction: column;
+    gap: 0.78rem;
+  }
+
+  .captcha-row,
+  .email-otp-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 0.5rem;
+    align-items: stretch;
+  }
+
+  .captcha-img-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    height: 2.6rem;
+    width: 118px;
+    border: 1px solid var(--border-strong);
+    border-radius: 0.7rem;
+    background: #f8fafc;
+    overflow: hidden;
+    cursor: pointer;
+    transition: border-color 0.15s ease, opacity 0.15s ease;
+  }
+
+  .captcha-img-btn:hover {
+    border-color: var(--magnetic);
+  }
+
+  .captcha-img-btn img {
+    display: block;
+    width: 118px;
+    height: 40px;
+    object-fit: cover;
+  }
+
+  .send-otp-btn {
+    height: 2.6rem;
+    padding: 0 0.85rem;
+    border-radius: 0.7rem;
+    font-size: 0.8rem;
+    white-space: nowrap;
+  }
+
+  .otp-status {
+    margin: 0;
+    padding: 0.55rem 0.75rem;
+    border-radius: 0.65rem;
+    background: var(--magnetic-soft);
+    border: 1px solid var(--magnetic-ring);
+    color: var(--magnetic);
+    font-size: 0.77rem;
+    line-height: 1.45;
+  }
+
+  .checkout-actions {
+    margin-top: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+  }
+
+  .field {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+  }
+
+  .field-label-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 0.5rem;
+  }
+
+  .field label {
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--foreground);
+  }
+
+  .field-hint {
+    font-size: 0.72rem;
+    color: var(--muted-foreground);
   }
 
   .checkout-form input[type="email"],
   .checkout-form input[type="text"] {
-    height: 2.4rem;
-    padding: 0 0.85rem;
-    border: 1px solid var(--border);
+    height: 2.6rem;
+    width: 100%;
+    padding: 0 0.9rem;
+    border: 1px solid var(--border-strong);
     border-radius: 0.7rem;
     background: var(--surface);
     color: var(--foreground);
+    font-size: 0.88rem;
     outline: none;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
   }
 
   .checkout-form input:focus {
-    border-color: color-mix(in srgb, var(--primary) 45%, var(--border));
-    box-shadow: 0 0 0 3px rgba(42, 46, 51, 0.08);
+    border-color: var(--magnetic);
+    box-shadow: 0 0 0 3px var(--magnetic-ring);
   }
 
   .checkout-submit {
-    height: 2.4rem;
-    min-width: 4.75rem;
-    padding: 0 1.1rem;
-    border-radius: 0.7rem;
+    height: 2.75rem;
+    width: 100%;
+    font-size: 0.9rem;
   }
 
   .checkout-error {
-    grid-column: 1 / -1;
     margin: 0;
-    font-size: 0.78rem;
+    font-size: 0.8rem;
     color: #b42318;
   }
 
-  .sr-only {
-    position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border: 0;
+  .consent-note {
+    margin: 0;
+    font-size: 0.73rem;
+    line-height: 1.5;
+    color: var(--muted-foreground);
+    text-align: center;
   }
 
-  @media (max-width: 900px) {
+  /* Policy Modal */
+  .policy-backdrop {
+    position: fixed;
+    inset: 0;
+    z-index: 100;
+    background: rgba(15, 23, 42, 0.36);
+    backdrop-filter: blur(6px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1.25rem;
+  }
+
+  .policy-backdrop[hidden] {
+    display: none;
+  }
+
+  .policy-sheet {
+    width: min(100%, 600px);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 1.2rem;
+    box-shadow: 0 24px 60px -12px rgba(15, 23, 42, 0.22);
+    overflow: hidden;
+  }
+
+  .policy-sheet-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    padding: 1.25rem 1.4rem 1rem;
+    border-bottom: 1px solid var(--border);
+  }
+
+  .policy-kicker {
+    margin: 0;
+    font-size: 0.74rem;
+    font-weight: 500;
+    color: var(--magnetic);
+  }
+
+  .policy-sheet-head h3 {
+    margin: 0.2rem 0 0;
+    font-size: 1.1rem;
+    font-weight: 600;
+    letter-spacing: -0.02em;
+  }
+
+  .policy-close {
+    width: 2rem;
+    height: 2rem;
+    border-radius: 999px;
+    border: 1px solid var(--border);
+    background: var(--background);
+    color: var(--muted-foreground);
+    cursor: pointer;
+    font-size: 0.85rem;
+  }
+
+  .policy-close:hover {
+    color: var(--foreground);
+    background: var(--card);
+  }
+
+  .policy-sheet-body {
+    padding: 1.15rem 1.4rem 1.25rem;
+    max-height: 68vh;
+    overflow-y: auto;
+  }
+
+  .policy-section-label {
+    margin: 0 0 0.5rem;
+    font-size: 0.76rem;
+    font-weight: 600;
+    color: var(--muted-foreground);
+    letter-spacing: 0.02em;
+  }
+
+  .policy-warning-box {
+    margin-bottom: 1rem;
+    padding: 0.75rem 0.9rem;
+    border-radius: 0.7rem;
+    background: var(--amber-bg);
+    border: 1px solid var(--amber-border);
+    color: var(--amber-text);
+    font-size: 0.82rem;
+    line-height: 1.55;
+  }
+
+  .policy-official-box {
+    margin-bottom: 1rem;
+    padding: 0.85rem 0.95rem;
+    border-radius: 0.7rem;
+    background: var(--background);
+    border: 1px solid var(--border);
+    color: var(--foreground);
+    font-size: 0.84rem;
+    line-height: 1.65;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .policy-list {
+    margin: 0;
+    padding-left: 1.15rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.65rem;
+    font-size: 0.86rem;
+    line-height: 1.65;
+    color: var(--foreground);
+  }
+
+  .policy-sheet-foot {
+    padding: 0.95rem 1.4rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    background: var(--background);
+  }
+
+  @media (max-width: 960px) {
+    .family-grid {
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+    }
+
+    .workbench {
+      grid-template-columns: 1fr;
+      gap: 1.35rem;
+      padding: 1.25rem;
+    }
+  }
+
+  @media (max-width: 560px) {
+    .shop {
+      padding: 0.25rem 1rem 2.5rem;
+    }
+
+    .section-meta {
+      display: none;
+    }
+
     .family-grid {
       grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.6rem;
     }
 
-    .checkout-inner {
+    .family-card {
+      min-height: 8.5rem;
+      padding: 0.9rem;
+    }
+
+    .notice-row {
       grid-template-columns: 1fr;
-      gap: 0.45rem;
-    }
-
-    .checkout-form {
-      grid-template-columns: 1fr 1fr;
-    }
-
-    .checkout-submit {
-      grid-column: 1 / -1;
-    }
-  }
-
-  @media (max-width: 520px) {
-    .shop {
-      padding-inline: 1rem;
-      padding-bottom: 12rem;
-    }
-
-    .family-grid {
-      grid-template-columns: 1fr 1fr;
-      gap: 0.55rem;
-    }
-
-    .checkout-form {
-      grid-template-columns: 1fr;
-    }
-
-    .checkout-hint {
-      display: none;
+      gap: 0.1rem;
     }
   }
 </style>
